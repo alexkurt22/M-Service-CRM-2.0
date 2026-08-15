@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:intl/intl.dart'; // Нужен для форматирования времени
+import 'package:intl/intl.dart'; 
 import 'order_details_screen.dart';
 import 'offline_order_screen.dart'; 
 
@@ -82,11 +82,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    // --- 1. ЛОГИКА ГИБКОГО ЗАПРОСА ДЛЯ СБОРНЫХ ЭКРАНОВ ---
+    Query query = FirebaseFirestore.instance.collection('orders');
+
+    if (statusKey == 'incoming') {
+      query = query.where('status', whereIn: ['new', 'awaiting_approval']);
+    } else if (statusKey == 'archive') {
+      query = query.where('status', whereIn: ['completed', 'canceled']);
+    } else {
+      query = query.where('status', isEqualTo: statusKey);
+    }
+
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('orders')
-          .where('status', isEqualTo: statusKey)
-          .snapshots(),
+      stream: query.snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -114,7 +122,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
         // --- ЛОГИКА УМНОГО ПОИСКА ЗАКАЗОВ ---
         if (_searchQuery.isNotEmpty) {
-          final query = _searchQuery.toLowerCase();
+          final queryText = _searchQuery.toLowerCase();
           docs = docs.where((doc) {
             final data = doc.data() as Map<String, dynamic>;
             final name = (data['client_name'] ?? '').toString().toLowerCase();
@@ -122,7 +130,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             final device = (data['device_type'] ?? '').toString().toLowerCase();
             final problem = (data['problem'] ?? '').toString().toLowerCase();
             
-            return name.contains(query) || phone.contains(query) || device.contains(query) || problem.contains(query);
+            return name.contains(queryText) || phone.contains(queryText) || device.contains(queryText) || problem.contains(queryText);
           }).toList();
         }
 
@@ -139,6 +147,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           );
         }
 
+        // Сортировка: Сначала с непрочитанными обновлениями, затем по дате
         docs.sort((a, b) {
           final aData = a.data() as Map<String, dynamic>;
           final bData = b.data() as Map<String, dynamic>;
@@ -161,7 +170,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             top: 12.0,
             left: 12.0,
             right: 12.0,
-            bottom: MediaQuery.of(context).padding.bottom + 120.0, // УВЕЛИЧЕН ОТСТУП, ЧТОБЫ КНОПКА НЕ ПЕРЕКРЫВАЛА ПОСЛЕДНИЙ ЗАКАЗ
+            bottom: MediaQuery.of(context).padding.bottom + 120.0, 
           ),
           itemCount: docs.length,
           itemBuilder: (context, index) {
@@ -172,10 +181,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
             final currentStatus = data['status'] ?? 'new';
             final hasUnreadUpdate = data['has_unread_update'] == true; 
             
-            // Получаем время создания
             final createdAt = data['created_at'] as Timestamp?;
             
-            Color iconColor = Colors.orange;
+            Color iconColor = Colors.blue; // По умолчанию для новых
             IconData statusIcon = Icons.new_releases;
             
             if (currentStatus == 'awaiting_approval') {
@@ -198,6 +206,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
             if (hasUnreadUpdate) {
               cardColor = isDark ? Colors.red[900]!.withOpacity(0.3) : Colors.red[50]!;
               borderSide = BorderSide(color: isDark ? Colors.red[700]! : Colors.red[300]!, width: 2);
+            } else if (currentStatus == 'completed') {
+              borderSide = BorderSide(color: Colors.teal.withOpacity(0.5), width: 1);
+            } else if (currentStatus == 'canceled') {
+              borderSide = BorderSide(color: Colors.red.withOpacity(0.3), width: 1);
             }
 
             return Card(
@@ -268,6 +280,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(color: isDark ? Colors.grey[500] : Colors.blueGrey[400], fontSize: 13),
                             ),
+                            
+                            // БЫСТРЫЙ ВЫВОД ИНФОРМАЦИИ В АРХИВЕ
+                            if (currentStatus == 'completed' && data['price'] != null)
+                              Padding(
+                                padding: const EdgeInsets.top(6.0),
+                                child: Text('Сумма: ${data['price']}', style: TextStyle(color: isDark ? Colors.tealAccent : Colors.teal, fontWeight: FontWeight.bold, fontSize: 13)),
+                              ),
+                            if (currentStatus == 'canceled' && data['cancel_reason'] != null)
+                              Padding(
+                                padding: const EdgeInsets.top(6.0),
+                                child: Text('Причина: ${data['cancel_reason']}', style: TextStyle(color: isDark ? Colors.red[300] : Colors.red[600], fontWeight: FontWeight.w600, fontSize: 12)),
+                              ),
                           ],
                         ),
                       ),
@@ -308,8 +332,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
         foregroundColor: Colors.white,
         title: Text(widget.title), 
       ),
-      // КНОПКА ДОБАВЛЕНИЯ ЗАКАЗА ТЕПЕРЬ ВО ВКЛАДКЕ 'new'
-      floatingActionButton: widget.status == 'new' && _hasPermission('view_all_orders') 
+      // КНОПКА ДОБАВЛЕНИЯ ЗАКАЗА ТЕПЕРЬ ТОЛЬКО ВО ВКЛАДКЕ INCOMING (ПОСТУПИВШИЕ)
+      floatingActionButton: widget.status == 'incoming' && _hasPermission('view_all_orders') 
           ? Padding(
               padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 8.0),
               child: FloatingActionButton(
