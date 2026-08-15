@@ -24,11 +24,8 @@ jobs:
         with:
           channel: 'stable'
           
-      # === ИСПРАВЛЕННЫЙ ШАГ: УДАЛЯЕМ СТАРУЮ ПАПКУ И СОЗДАЕМ ПО НОВОМУ СТАНДАРТУ ===
       - name: Generate system files
-        run: |
-          rm -rf android
-          flutter create -t app --platforms=android .
+        run: flutter create -t app --platforms=android .
         
       - name: Fix Android Manifest (Permissions & SMS)
         run: |
@@ -52,13 +49,14 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Fix Protobuf Duplicate Classes
+      # === ИСПРАВЛЕННЫЙ ШАГ: ЗАПИСЬ ИДЕТ В ФАЙЛ .kts С ИСПОЛЬЗОВАНИЕМ СИНТАКСИСА KOTLIN ===
+      - name: Fix Protobuf Duplicate Classes (Kotlin DSL)
         run: |
-          cat << 'EOF' >> android/app/build.gradle
+          cat << 'EOF' >> android/app/build.gradle.kts
           
           configurations.all {
-              exclude group: 'com.google.firebase', module: 'protolite-well-known-types'
-              exclude group: 'com.google.protobuf', module: 'protobuf-lite'
+              exclude(group = "com.google.firebase", module = "protolite-well-known-types")
+              exclude(group = "com.google.protobuf", module = "protobuf-lite")
           }
           EOF
 
@@ -138,4 +136,3 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
-
