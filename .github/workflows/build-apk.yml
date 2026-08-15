@@ -49,6 +49,17 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # === ДОБАВЛЕННЫЙ ШАГ: РЕШАЕТ КОНФЛИКТ PROTOBUF НА ЛЕТУ ===
+      - name: Fix Protobuf Duplicate Classes
+        run: |
+          cat << 'EOF' >> android/app/build.gradle
+          
+          configurations.all {
+              exclude group: 'com.google.firebase', module: 'protolite-well-known-types'
+              exclude group: 'com.google.protobuf', module: 'protobuf-lite'
+          }
+          EOF
+
       - name: Fix Android SDK versions and kill JNI bug
         run: |
           # ВАЖНО: Включаем AndroidX и Jetifier для исправления ошибки CheckDuplicatesRunnable
