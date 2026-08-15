@@ -14,12 +14,12 @@ import 'statistics_screen.dart';
 import 'tasks_screen.dart'; 
 import 'bulk_push_screen.dart'; 
 import 'admin_notes_screen.dart';
-import 'content_manager_screen.dart';
+import 'content_manager_screen.dart'; // Подключен Контент-завод
 import 'store_management_screen.dart';
 import 'cash_register_screen.dart'; 
 import 'marketing_screen.dart'; 
 import 'login_screen.dart'; 
-import 'company_editor_screen.dart'; // <--- ПОДКЛЮЧЕН ЭКРАН РЕДАКТОРА
+import 'company_editor_screen.dart'; 
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -121,7 +121,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (context) => LoginScreen()), 
+        MaterialPageRoute(builder: (context) => const LoginScreen()), 
         (route) => false,
       );
     }
@@ -143,27 +143,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
-                  Padding(padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0), child: Text('ИНСТРУМЕНТЫ', style: TextStyle(color: isDark ? Colors.grey[500] : Colors.blueGrey[400], fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1.2))),
-                  StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance.collection('orders').where('status', isEqualTo: 'canceled').snapshots(),
-                    builder: (context, snapshot) {
-                      int unreadCanceledCount = 0;
-                      if (snapshot.hasData) {
-                        unreadCanceledCount = snapshot.data!.docs.where((d) {
-                          final data = d.data() as Map<String, dynamic>;
-                          return data['has_unread_update'] == true && (_hasPermission('view_all_orders') || data['assigned_to'] == _myPhone);
-                        }).length;
-                      }
-                      return ListTile(
-                        leading: Icon(Icons.remove_shopping_cart, color: isDark ? Colors.red[300] : Colors.red[700]),
-                        title: Text('Отмененные заказы', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)),
-                        trailing: unreadCanceledCount > 0 ? Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(12)), child: Text('$unreadCanceledCount', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))) : null,
-                        onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => const OrdersScreen(status: 'canceled', title: 'Отмененные заказы'))); },
-                      );
-                    },
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0), 
+                    child: Text('ИНСТРУМЕНТЫ', style: TextStyle(color: isDark ? Colors.grey[500] : Colors.blueGrey[400], fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1.2))
                   ),
-                  Divider(height: 1, color: isDark ? Colors.grey[800] : Colors.grey[300]),
-
+                  
                   if (_hasPermission('view_finance'))
                     ListTile(leading: Icon(Icons.bar_chart, color: isDark ? Colors.white70 : Colors.blueGrey[700]), title: Text('Статистика', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)), onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => const StatisticsScreen())); }),
 
@@ -193,9 +177,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   if (_hasPermission('manage_settings')) ...[
                     ListTile(leading: Icon(Icons.storefront, color: isDark ? Colors.green[300] : Colors.green[700]), title: Text('Магазин и Склад', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)), onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => const StoreManagementScreen())); }),
                     
-                    ListTile(leading: Icon(Icons.dynamic_feed, color: isDark ? Colors.pink[300] : Colors.pink[600]), title: Text('Контент и Новости', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)), onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => const ContentManagerScreen())); }),
+                    // --- НОВАЯ КНОПКА: КОНТЕНТ-ЗАВОД ---
+                    ListTile(
+                      leading: Icon(Icons.dynamic_feed, color: isDark ? Colors.pink[300] : Colors.pink[600]), 
+                      title: Text('Контент-завод', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)), 
+                      onTap: () { 
+                        Navigator.pop(context); 
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const ContentManagerScreen())); 
+                      }
+                    ),
                     
-                    // --- НОВАЯ КНОПКА: ИНФО О КОМПАНИИ (О НАС, КОНТАКТЫ, FAQ) ---
                     ListTile(
                       leading: const Icon(Icons.business, color: Colors.indigo), 
                       title: Text('Инфо о компании (FAQ)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)), 
@@ -273,7 +264,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         backgroundColor: isDark ? Colors.grey[900] : Colors.blueGrey[900], foregroundColor: Colors.white,
         title: const Text('Сводка CRM', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), elevation: 0,
         leading: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance.collection('orders').where('status', isEqualTo: 'canceled').snapshots(),
+          stream: FirebaseFirestore.instance.collection('orders').where('status', isEqualTo: 'incoming').snapshots(),
           builder: (context, snapshot) {
             int unreadCount = 0;
             if (snapshot.hasData) unreadCount = snapshot.data!.docs.where((d) => (d.data() as Map<String, dynamic>)['has_unread_update'] == true && (_hasPermission('view_all_orders') || (d.data() as Map<String, dynamic>)['assigned_to'] == _myPhone)).length;
@@ -336,18 +327,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(children: [Icon(Icons.home_repair_service, color: isDark ? Colors.blueGrey[300] : Colors.blueGrey[800]), const SizedBox(width: 8), Text('Заказы', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: isDark ? Colors.white : Colors.blueGrey[900], letterSpacing: 1.2))]),
+              Row(children: [Icon(Icons.home_repair_service, color: isDark ? Colors.blueGrey[300] : Colors.blueGrey[800]), const SizedBox(width: 8), Text('Заказы (Новая структура)', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: isDark ? Colors.white : Colors.blueGrey[900], letterSpacing: 1.2))]),
               const SizedBox(height: 12),
+              
+              // --- ОБНОВЛЕННАЯ СЕТКА ИЗ 3-Х КВАДРАТОВ ЗАКАЗОВ ---
               GridView.count(
                 crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1.1,
                 children: [
-                  _buildStatCard(context: context, isDark: isDark, title: 'Новые заказы', icon: Icons.fiber_new, color: Colors.blue, child: _buildStreamStat(stream: FirebaseFirestore.instance.collection('orders').where('status', isEqualTo: 'new').snapshots(), color: isDark ? Colors.blue[300]! : Colors.blue[800]!, filter: (doc) => _hasPermission('view_all_orders') || (doc.data() as Map<String, dynamic>)['assigned_to'] == _myPhone), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OrdersScreen(status: 'new', title: 'Новые заказы')))),
-                  _buildStatCard(context: context, isDark: isDark, title: 'Ожидают ответа', icon: Icons.hourglass_empty, color: Colors.deepPurple, child: _buildStreamStat(stream: FirebaseFirestore.instance.collection('orders').where('status', isEqualTo: 'awaiting_approval').snapshots(), color: isDark ? Colors.deepPurple[300]! : Colors.deepPurple[800]!, filter: (doc) => _hasPermission('view_all_orders') || (doc.data() as Map<String, dynamic>)['assigned_to'] == _myPhone), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OrdersScreen(status: 'awaiting_approval', title: 'Ожидают ответа')))),
-                  _buildStatCard(context: context, isDark: isDark, title: 'Выполняются', icon: Icons.build_circle, color: Colors.orange, child: _buildStreamStat(stream: FirebaseFirestore.instance.collection('orders').where('status', isEqualTo: 'in_progress').snapshots(), color: isDark ? Colors.orange[300]! : Colors.orange[800]!, filter: (doc) => _hasPermission('view_all_orders') || (doc.data() as Map<String, dynamic>)['assigned_to'] == _myPhone), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OrdersScreen(status: 'in_progress', title: 'В работе (Выполняются)')))),
-                  _buildStatCard(context: context, isDark: isDark, title: 'Выполненные', icon: Icons.check_circle, color: Colors.teal, child: _buildStreamStat(stream: FirebaseFirestore.instance.collection('orders').where('status', isEqualTo: 'completed').snapshots(), color: isDark ? Colors.teal[300]! : Colors.teal[800]!, filter: (doc) => _hasPermission('view_all_orders') || (doc.data() as Map<String, dynamic>)['assigned_to'] == _myPhone), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OrdersScreen(status: 'completed', title: 'Выполненные заказы')))),
+                  _buildStatCard(
+                    context: context, isDark: isDark, title: 'Поступившие', icon: Icons.inbox, color: Colors.blue, 
+                    child: _buildStreamStat(
+                      stream: FirebaseFirestore.instance.collection('orders').where('status', whereIn: ['new', 'awaiting_approval']).snapshots(), 
+                      color: isDark ? Colors.blue[300]! : Colors.blue[800]!, 
+                      filter: (doc) => _hasPermission('view_all_orders') || (doc.data() as Map<String, dynamic>)['assigned_to'] == _myPhone
+                    ), 
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OrdersScreen(status: 'incoming', title: 'Поступившие')))
+                  ),
+                  _buildStatCard(
+                    context: context, isDark: isDark, title: 'В работе', icon: Icons.build_circle, color: Colors.orange, 
+                    child: _buildStreamStat(
+                      stream: FirebaseFirestore.instance.collection('orders').where('status', isEqualTo: 'in_progress').snapshots(), 
+                      color: isDark ? Colors.orange[300]! : Colors.orange[800]!, 
+                      filter: (doc) => _hasPermission('view_all_orders') || (doc.data() as Map<String, dynamic>)['assigned_to'] == _myPhone
+                    ), 
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OrdersScreen(status: 'in_progress', title: 'Готово к исполнению')))
+                  ),
+                  _buildStatCard(
+                    context: context, isDark: isDark, title: 'Архив', icon: Icons.archive, color: Colors.teal, 
+                    child: _buildStreamStat(
+                      stream: FirebaseFirestore.instance.collection('orders').where('status', whereIn: ['completed', 'canceled']).snapshots(), 
+                      color: isDark ? Colors.teal[300]! : Colors.teal[800]!, 
+                      filter: (doc) => _hasPermission('view_all_orders') || (doc.data() as Map<String, dynamic>)['assigned_to'] == _myPhone
+                    ), 
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OrdersScreen(status: 'archive', title: 'Архив')))
+                  ),
                 ],
               ),
+              
               const SizedBox(height: 32),
+              
               if (_hasPermission('manage_clients')) ...[
                 Row(children: [Icon(Icons.people_alt, color: isDark ? Colors.blueGrey[300] : Colors.blueGrey[800]), const SizedBox(width: 8), Text('Клиенты', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: isDark ? Colors.white : Colors.blueGrey[900], letterSpacing: 1.2))]),
                 const SizedBox(height: 12),
@@ -369,3 +387,4 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 }
+
