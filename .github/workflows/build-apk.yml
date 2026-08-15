@@ -24,8 +24,11 @@ jobs:
         with:
           channel: 'stable'
           
+      # === ИСПРАВЛЕННЫЙ ШАГ: УДАЛЯЕМ СТАРУЮ ПАПКУ И СОЗДАЕМ ПО НОВОМУ СТАНДАРТУ ===
       - name: Generate system files
-        run: flutter create --platforms=android .
+        run: |
+          rm -rf android
+          flutter create -t app --platforms=android .
         
       - name: Fix Android Manifest (Permissions & SMS)
         run: |
@@ -49,7 +52,6 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # === ДОБАВЛЕННЫЙ ШАГ: РЕШАЕТ КОНФЛИКТ PROTOBUF НА ЛЕТУ ===
       - name: Fix Protobuf Duplicate Classes
         run: |
           cat << 'EOF' >> android/app/build.gradle
@@ -136,3 +138,4 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
+
