@@ -284,12 +284,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             // БЫСТРЫЙ ВЫВОД ИНФОРМАЦИИ В АРХИВЕ
                             if (currentStatus == 'completed' && data['price'] != null)
                               Padding(
-                                padding: const EdgeInsets.top(6.0),
+                                padding: const EdgeInsets.only(top: 6.0), // <-- ИСПРАВЛЕНО
                                 child: Text('Сумма: ${data['price']}', style: TextStyle(color: isDark ? Colors.tealAccent : Colors.teal, fontWeight: FontWeight.bold, fontSize: 13)),
                               ),
                             if (currentStatus == 'canceled' && data['cancel_reason'] != null)
                               Padding(
-                                padding: const EdgeInsets.top(6.0),
+                                padding: const EdgeInsets.only(top: 6.0), // <-- ИСПРАВЛЕНО
                                 child: Text('Причина: ${data['cancel_reason']}', style: TextStyle(color: isDark ? Colors.red[300] : Colors.red[600], fontWeight: FontWeight.w600, fontSize: 12)),
                               ),
                           ],
