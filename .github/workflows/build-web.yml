@@ -1,0 +1,40 @@
+name: Deploy Web App to GitHub Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Скачиваем код
+        uses: actions/checkout@v4
+
+      - name: Устанавливаем Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Достаем секретный ключ Firebase из сейфа
+        env:
+          FIREBASE_SECRET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          mkdir -p assets
+          echo -n "$FIREBASE_SECRET" | tr -d '\n\r ' | base64 -d -i > assets/firebase_credentials.json
+
+      - name: Создаем папку Web и собираем сайт
+        run: |
+          flutter config --enable-web
+          flutter create . --platforms web
+          flutter pub get
+          flutter build web --release --base-href /mservice-CRM/
+
+      - name: Загружаем на бесплатный хостинг GitHub
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build/web

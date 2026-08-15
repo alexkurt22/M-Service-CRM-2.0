@@ -1,0 +1,50 @@
+name: mservice_crm
+description: A new Flutter project.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+    
+  # --- Core & UI ---
+  cupertino_icons: ^1.0.8
+  intl: ^0.18.0
+  shared_preferences: ^2.2.3
+  url_launcher: ^6.3.0
+  share_plus: ^9.0.0
+  
+  # --- Firebase Services ---
+  firebase_core: ^2.32.0
+  cloud_firestore: ^4.17.5
+  firebase_storage: ^11.6.0
+  firebase_messaging: ^14.9.4
+  
+  # --- Google API (Push Notifications & Monitoring) ---
+  googleapis_auth: ^1.4.1
+  googleapis: ^13.0.0
+  http: ^1.2.0
+  
+  # --- Media, Files & Hardware ---
+  image_picker: ^1.1.2
+  file_picker: ^8.0.0
+  path_provider: ^2.1.2
+  barcode_scan2: ^4.3.0
+  mobile_scanner: ^5.0.3        # Оставляем, чтобы старые экраны не крашили сборку
+  permission_handler: ^11.3.1   # Нужен для камеры
+  
+  # --- Audio & Notifications ---
+  # flutter_ringtone_player УДАЛЕН (ВЫЗЫВАЛ ЭХО В УВЕДОМЛЕНИЯХ)
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/firebase_credentials.json

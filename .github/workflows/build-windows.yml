@@ -1,0 +1,65 @@
+name: Build Windows App
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          
+      - name: Generate system files
+        run: flutter create --platforms=windows .
+        shell: bash
+        
+      - name: Install dependencies
+        run: flutter pub get
+        shell: bash
+
+      - name: Inject Secret Keys
+        env:
+          FIREBASE_SECRET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          mkdir -p assets
+          echo -n "$FIREBASE_SECRET" | tr -d '\n\r ' | base64 -d -i > assets/firebase_credentials.json
+        shell: bash
+
+      - name: Fix CMake and Visual Studio errors
+        run: |
+          echo 'set(CMAKE_POLICY_VERSION_MINIMUM "3.5" CACHE STRING "Fix Firebase" FORCE)' > temp.txt
+          echo 'add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)' >> temp.txt
+          cat windows/CMakeLists.txt >> temp.txt
+          mv temp.txt windows/CMakeLists.txt
+        shell: bash
+
+      - name: Build Windows App
+        run: flutter build windows --release
+        shell: bash
+
+      - name: Generate Dynamic Name with Date and Time
+        run: |
+          export TZ="Asia/Ashgabat"
+          BUILD_TIME=$(date +'%d-%m-%Y_%H-%M')
+          ZIP_NAME="MService_CRM_Windows_v1.0.${{ github.run_number }}_${BUILD_TIME}"
+          echo "FINAL_ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.FINAL_ZIP_NAME }}
+          path: build/windows/x64/runner/Release/
