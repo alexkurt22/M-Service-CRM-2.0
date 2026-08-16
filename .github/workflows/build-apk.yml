@@ -25,7 +25,9 @@ jobs:
           channel: 'stable'
           
       - name: Generate system files
-        run: flutter create -t app --platforms=android .
+        run: |
+          rm -rf android
+          flutter create -t app --platforms=android .
         
       - name: Fix Android Manifest (Permissions & SMS)
         run: |
@@ -49,7 +51,6 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # === ИСПРАВЛЕННЫЙ ШАГ: ЗАПИСЬ ИДЕТ В ФАЙЛ .kts С ИСПОЛЬЗОВАНИЕМ СИНТАКСИСА KOTLIN ===
       - name: Fix Protobuf Duplicate Classes (Kotlin DSL)
         run: |
           cat << 'EOF' >> android/app/build.gradle.kts
@@ -58,6 +59,17 @@ jobs:
               exclude(group = "com.google.firebase", module = "protolite-well-known-types")
               exclude(group = "com.google.protobuf", module = "protobuf-lite")
           }
+          EOF
+
+      # === ДОБАВЛЕННЫЙ ШАГ: ЗАЩИТА КЛАССОВ FIRESTORE ОТ УДАЛЕНИЯ ===
+      - name: Add ProGuard Rules for Firestore
+        run: |
+          cat << 'EOF' > android/app/proguard-rules.pro
+          -keep class com.google.rpc.** { *; }
+          -keep class com.google.type.** { *; }
+          -keep class com.google.firebase.firestore.** { *; }
+          -dontwarn com.google.rpc.**
+          -dontwarn com.google.type.**
           EOF
 
       - name: Fix Android SDK versions and kill JNI bug
@@ -136,3 +148,4 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
+
