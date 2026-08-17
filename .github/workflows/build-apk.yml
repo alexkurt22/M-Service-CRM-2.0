@@ -61,16 +61,6 @@ jobs:
           }
           EOF
 
-      - name: Add ProGuard Rules for Firestore
-        run: |
-          cat << 'EOF' > android/app/proguard-rules.pro
-          -keep class com.google.rpc.** { *; }
-          -keep class com.google.type.** { *; }
-          -keep class com.google.firebase.firestore.** { *; }
-          -dontwarn com.google.rpc.**
-          -dontwarn com.google.type.**
-          EOF
-
       - name: Fix Android SDK versions and kill JNI bug
         run: |
           # ВАЖНО: Включаем AndroidX и Jetifier
@@ -99,17 +89,14 @@ jobs:
           GOOGLE_SERVICES: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           mkdir -p assets
-          # Сохраняем сырой JSON-ключ для Пуш-уведомлений
           cat << EOF > assets/firebase_credentials.json
           $FIREBASE_SECRET
           EOF
           
-          # ИСПРАВЛЕНИЕ: Создаем Паспорт приложения для Firebase
           cat << EOF > android/app/google-services.json
           $GOOGLE_SERVICES
           EOF
           
-          # ГЕНЕРИРУЕМ ТЕСТОВЫЙ КЛЮЧ ПРЯМО НА СЕРВЕРЕ
           keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 1000 -alias upload -storepass mservice123 -keypass mservice123 -dname "CN=Test, OU=Test, O=MService, L=Ashgabat, S=Ahal, C=TM"
           
           cat << 'EOF' > setup_signing.dart
@@ -139,8 +126,9 @@ jobs:
           EOF
           dart setup_signing.dart
 
+      # === САМОЕ ГЛАВНОЕ ИЗМЕНЕНИЕ: ДОБАВЛЕН ФЛАГ --no-shrink ===
       - name: Build APK
-        run: flutter build apk --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }}
+        run: flutter build apk --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }} --no-shrink
 
       - name: Rename APK with Date and Time
         run: |
@@ -156,3 +144,4 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
+
