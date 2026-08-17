@@ -26,6 +26,29 @@ class _LoginScreenState extends State<LoginScreen> {
   // ❗ ВПИШИ СЮДА СВОЙ НОМЕР ТЕЛЕФОНА ДЛЯ ПОЛУЧЕНИЯ SMS ОТ СОТРУДНИКОВ ❗
   final String ownerPhone = '+99363644925'; 
 
+  // --- ФУНКЦИЯ ДЛЯ ОТЛОВА КРАШЕЙ НА ЭКРАНЕ ---
+  void _showFatalError(String error, String stackTrace) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Системная ошибка', style: TextStyle(color: Colors.red)),
+        content: SingleChildScrollView(
+          child: Text('$error\n\n$stackTrace', style: const TextStyle(fontSize: 12)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              setState(() => _isLoading = false);
+            },
+            child: const Text('ЗАКРЫТЬ'),
+          )
+        ],
+      ),
+    );
+  }
+
   Future<void> _handleAuth() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -86,27 +109,35 @@ class _LoginScreenState extends State<LoginScreen> {
         // --- ЛОГИКА ВХОДА ---
         if (!doc.exists) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Сотрудник не найден. Подайте заявку на регистрацию.'), backgroundColor: Colors.red));
-        } else if (doc.data()?['password'] != _passController.text.trim()) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Неверный пароль'), backgroundColor: Colors.red));
-        } else if (doc.data()?['is_approved'] == false) {
-          // Если пароль верный, но владелец еще не одобрил
-          setState(() => _isWaitingForApproval = true);
         } else {
-          // Успешный вход
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('employee_phone', phone);
+          // ИЗБЕГАЕМ КРАША С ТИПАМИ ДАННЫХ
+          final data = doc.data() as Map<String, dynamic>;
+          final dbPassword = data['password']?.toString() ?? ''; // Конвертируем числовой пароль в строку!
+          final isApproved = data['is_approved'] ?? false;
           
-          if (mounted) {
-            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DashboardScreen()));
+          if (dbPassword != _passController.text.trim()) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Неверный пароль'), backgroundColor: Colors.red));
+          } else if (isApproved == false) {
+            // Если пароль верный, но владелец еще не одобрил
+            setState(() => _isWaitingForApproval = true);
+          } else {
+            // Успешный вход
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString('employee_phone', phone);
+            
+            if (mounted) {
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DashboardScreen()));
+            }
           }
         }
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      // ЕСЛИ ПРОИЗОЙДЕТ КРАШ, МЫ ЕГО ПОЙМАЕМ И ВЫВЕДЕМ НА ЭКРАН!
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+        _showFatalError(e.toString(), stackTrace.toString());
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && !_isWaitingForApproval) setState(() => _isLoading = false);
     }
   }
 
