@@ -61,6 +61,16 @@ jobs:
           }
           EOF
 
+      - name: Add ProGuard Rules for Firestore
+        run: |
+          cat << 'EOF' > android/app/proguard-rules.pro
+          -keep class com.google.rpc.** { *; }
+          -keep class com.google.type.** { *; }
+          -keep class com.google.firebase.firestore.** { *; }
+          -dontwarn com.google.rpc.**
+          -dontwarn com.google.type.**
+          EOF
+
       - name: Fix Android SDK versions and kill JNI bug
         run: |
           # ВАЖНО: Включаем AndroidX и Jetifier
@@ -99,6 +109,7 @@ jobs:
           
           keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 1000 -alias upload -storepass mservice123 -keypass mservice123 -dname "CN=Test, OU=Test, O=MService, L=Ashgabat, S=Ahal, C=TM"
           
+          # ИСПРАВЛЕНИЕ: ЖЕСТКОЕ ОТКЛЮЧЕНИЕ МИНИФИКАЦИИ В GRADLE
           cat << 'EOF' > setup_signing.dart
           import 'dart:io';
           void main() {
@@ -110,8 +121,10 @@ jobs:
                 'buildTypes {',
                 'signingConfigs {\n        create("release") {\n            storeFile = file("upload-keystore.jks")\n            storePassword = "mservice123"\n            keyAlias = "upload"\n            keyPassword = "mservice123"\n        }\n    }\n    buildTypes {'
               );
-              text = text.replaceAll('signingConfigs.getByName("debug")', 'signingConfigs.getByName("release")');
-              text = text.replaceAll('signingConfig = signingConfigs.debug', 'signingConfig = signingConfigs.getByName("release")');
+              text = text.replaceAll(
+                'signingConfigs.getByName("debug")', 
+                'signingConfigs.getByName("release")\n            isMinifyEnabled = false\n            proguardFiles(getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro")'
+              );
               kts.writeAsStringSync(text);
             } else if (gradle.existsSync()) {
               var text = gradle.readAsStringSync();
@@ -119,16 +132,18 @@ jobs:
                 'buildTypes {',
                 'signingConfigs {\n        release {\n            storeFile file("upload-keystore.jks")\n            storePassword "mservice123"\n            keyAlias "upload"\n            keyPassword "mservice123"\n        }\n    }\n    buildTypes {'
               );
-              text = text.replaceAll('signingConfig signingConfigs.debug', 'signingConfig signingConfigs.release');
+              text = text.replaceAll(
+                'signingConfig signingConfigs.debug', 
+                'signingConfig signingConfigs.release\n            minifyEnabled false\n            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"'
+              );
               gradle.writeAsStringSync(text);
             }
           }
           EOF
           dart setup_signing.dart
 
-      # === САМОЕ ГЛАВНОЕ ИЗМЕНЕНИЕ: ДОБАВЛЕН ФЛАГ --no-shrink ===
       - name: Build APK
-        run: flutter build apk --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }} --no-shrink
+        run: flutter build apk --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }}
 
       - name: Rename APK with Date and Time
         run: |
