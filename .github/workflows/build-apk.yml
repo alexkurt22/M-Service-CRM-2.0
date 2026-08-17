@@ -98,7 +98,10 @@ jobs:
           FIREBASE_SECRET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           mkdir -p assets
-          echo "$FIREBASE_SECRET" | tr -d '\n\r ' | base64 --decode > assets/firebase_credentials.json
+          # ИСПРАВЛЕНО: Сохраняем сырой JSON-ключ как есть, без base64 декодирования
+          cat << EOF > assets/firebase_credentials.json
+          $FIREBASE_SECRET
+          EOF
           
           # ГЕНЕРИРУЕМ ТЕСТОВЫЙ КЛЮЧ ПРЯМО НА СЕРВЕРЕ (БЕЗ SECRET-КОДОВ)
           keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 1000 -alias upload -storepass mservice123 -keypass mservice123 -dname "CN=Test, OU=Test, O=MService, L=Ashgabat, S=Ahal, C=TM"
