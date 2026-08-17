@@ -109,7 +109,7 @@ jobs:
           
           keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 1000 -alias upload -storepass mservice123 -keypass mservice123 -dname "CN=Test, OU=Test, O=MService, L=Ashgabat, S=Ahal, C=TM"
           
-          # ИСПРАВЛЕНИЕ: ИСПОЛЬЗУЕМ proguard-android-optimize.txt ВМЕСТО СТАРОГО
+          # ИСПРАВЛЕНИЕ: ОТКЛЮЧАЕМ И MINIFY, И СЖАТИЕ РЕСУРСОВ ОДНОВРЕМЕННО
           cat << 'EOF' > setup_signing.dart
           import 'dart:io';
           void main() {
@@ -123,7 +123,7 @@ jobs:
               );
               text = text.replaceAll(
                 'signingConfigs.getByName("debug")', 
-                'signingConfigs.getByName("release")\n            isMinifyEnabled = false\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")'
+                'signingConfigs.getByName("release")\n            isMinifyEnabled = false\n            isShrinkResources = false\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")'
               );
               kts.writeAsStringSync(text);
             } else if (gradle.existsSync()) {
@@ -134,7 +134,7 @@ jobs:
               );
               text = text.replaceAll(
                 'signingConfig signingConfigs.debug', 
-                'signingConfig signingConfigs.release\n            minifyEnabled false\n            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"'
+                'signingConfig signingConfigs.release\n            minifyEnabled false\n            shrinkResources false\n            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"'
               );
               gradle.writeAsStringSync(text);
             }
@@ -159,4 +159,3 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
-
