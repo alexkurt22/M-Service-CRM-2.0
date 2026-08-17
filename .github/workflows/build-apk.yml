@@ -93,17 +93,23 @@ jobs:
           # УБИЙЦА БАГА JNI
           find /home/runner/.pub-cache/hosted -path "*/jni-*/android/build.gradle" -exec perl -0777 -pi -e 's/kotlin\s*\{[^}]*\}//g' {} + || true
 
-      - name: Inject Secret Keys and Generate Keystore
+      - name: Inject Secret Keys, Firebase config and Generate Keystore
         env:
           FIREBASE_SECRET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GOOGLE_SERVICES: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           mkdir -p assets
-          # ИСПРАВЛЕНО: Сохраняем сырой JSON-ключ как есть, без base64 декодирования
+          # Сохраняем сырой JSON-ключ для Пуш-уведомлений
           cat << EOF > assets/firebase_credentials.json
           $FIREBASE_SECRET
           EOF
           
-          # ГЕНЕРИРУЕМ ТЕСТОВЫЙ КЛЮЧ ПРЯМО НА СЕРВЕРЕ (БЕЗ SECRET-КОДОВ)
+          # ИСПРАВЛЕНИЕ: Создаем Паспорт приложения для Firebase
+          cat << EOF > android/app/google-services.json
+          $GOOGLE_SERVICES
+          EOF
+          
+          # ГЕНЕРИРУЕМ ТЕСТОВЫЙ КЛЮЧ ПРЯМО НА СЕРВЕРЕ
           keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 1000 -alias upload -storepass mservice123 -keypass mservice123 -dname "CN=Test, OU=Test, O=MService, L=Ashgabat, S=Ahal, C=TM"
           
           cat << 'EOF' > setup_signing.dart
