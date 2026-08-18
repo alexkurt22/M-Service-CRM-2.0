@@ -145,7 +145,6 @@ jobs:
           
           echo "$GOOGLE_SERVICES" | tr -d '\n\r ' | base64 --decode > android/app/google-services.json
           
-          # === ИСПРАВЛЕНИЕ: УБРАНЫ СЛЭШИ ПЕРЕД $pkgName ===
           cat << 'EOF' > sync_package.dart
           import 'dart:io';
           import 'dart:convert';
@@ -201,52 +200,19 @@ jobs:
           }
           EOF
           dart sync_package.dart
-          
-          keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 1000 -alias upload -storepass mservice123 -keypass mservice123 -dname "CN=Test, OU=Test, O=MService, L=Ashgabat, S=Ahal, C=TM"
-          
-          cat << 'EOF' > setup_signing.dart
-          import 'dart:io';
-          void main() {
-            var kts = File('android/app/build.gradle.kts');
-            var gradle = File('android/app/build.gradle');
-            if (kts.existsSync()) {
-              var text = kts.readAsStringSync();
-              text = text.replaceFirst(
-                'buildTypes {',
-                'signingConfigs {\n        create("release") {\n            storeFile = file("upload-keystore.jks")\n            storePassword = "mservice123"\n            keyAlias = "upload"\n            keyPassword = "mservice123"\n        }\n    }\n    buildTypes {'
-              );
-              text = text.replaceAll(
-                'signingConfigs.getByName("debug")', 
-                'signingConfigs.getByName("release")\n            isMinifyEnabled = false\n            isShrinkResources = false\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")'
-              );
-              kts.writeAsStringSync(text);
-            } else if (gradle.existsSync()) {
-              var text = gradle.readAsStringSync();
-              text = text.replaceFirst(
-                'buildTypes {',
-                'signingConfigs {\n        release {\n            storeFile file("upload-keystore.jks")\n            storePassword "mservice123"\n            keyAlias "upload"\n            keyPassword "mservice123"\n        }\n    }\n    buildTypes {'
-              );
-              text = text.replaceAll(
-                'signingConfig signingConfigs.debug', 
-                'signingConfig signingConfigs.release\n            minifyEnabled false\n            shrinkResources false\n            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"'
-              );
-              gradle.writeAsStringSync(text);
-            }
-          }
-          EOF
-          dart setup_signing.dart
 
+      # === ВАЖНО: ТЕПЕРЬ СОБИРАЕМ DEBUG-ВЕРСИЮ ДЛЯ ДИАГНОСТИКИ ===
       - name: Build APK
-        run: flutter build apk --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }} --no-shrink
+        run: flutter build apk --debug --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }}
 
       - name: Rename APK with Date and Time
         run: |
           export TZ="Asia/Ashgabat"
           BUILD_TIME=$(date +'%d-%m-%Y_%H-%M')
-          NEW_NAME="MService_CRM_v1.0.${{ github.run_number }}_${BUILD_TIME}.apk"
-          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/$NEW_NAME
+          NEW_NAME="MService_CRM_v1.0.${{ github.run_number }}_${BUILD_TIME}_DEBUG.apk"
+          mv build/app/outputs/flutter-apk/app-debug.apk build/app/outputs/flutter-apk/$NEW_NAME
           echo "FINAL_APK_NAME=$NEW_NAME" >> $GITHUB_ENV
-          echo "FINAL_ZIP_NAME=MService_CRM_v1.0.${{ github.run_number }}_${BUILD_TIME}" >> $GITHUB_ENV
+          echo "FINAL_ZIP_NAME=MService_CRM_v1.0.${{ github.run_number }}_${BUILD_TIME}_DEBUG" >> $GITHUB_ENV
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
