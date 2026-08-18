@@ -145,7 +145,7 @@ jobs:
           
           echo "$GOOGLE_SERVICES" | tr -d '\n\r ' | base64 --decode > android/app/google-services.json
           
-          # === УМНАЯ СИНХРОНИЗАЦИЯ ИМЕНИ ПАКЕТА ИЗ DART-НАСТРОЕК ===
+          # === ИСПРАВЛЕНИЕ: УБРАНЫ СЛЭШИ ПЕРЕД $pkgName ===
           cat << 'EOF' > sync_package.dart
           import 'dart:io';
           import 'dart:convert';
@@ -155,7 +155,6 @@ jobs:
             if (!optionsFile.existsSync()) return;
             var text = optionsFile.readAsStringSync();
             
-            // Ищем уникальный ID Android-приложения
             RegExp exp = RegExp(r"appId:\s*['\x22](1:[^\x22']+:android:[^\x22']+)['\x22']");
             var match = exp.firstMatch(text);
             if (match == null) return;
@@ -167,7 +166,6 @@ jobs:
             var gsData = jsonDecode(gsFile.readAsStringSync());
             
             String? pkgName;
-            // Ищем пакет именно для этого ID
             for (var client in gsData['client']) {
               if (client['client_info']['mobilesdk_app_id'] == appId) {
                 pkgName = client['client_info']['android_client_info']['package_name'];
@@ -177,12 +175,11 @@ jobs:
             
             if (pkgName == null) return;
             
-            // Прописываем правильное имя
             var kts = File('android/app/build.gradle.kts');
             if (kts.existsSync()) {
               var ktsText = kts.readAsStringSync();
-              ktsText = ktsText.replaceAll(RegExp(r'applicationId\s*=\s*".*"'), 'applicationId = "\$pkgName"');
-              ktsText = ktsText.replaceAll(RegExp(r'namespace\s*=\s*".*"'), 'namespace = "\$pkgName"');
+              ktsText = ktsText.replaceAll(RegExp(r'applicationId\s*=\s*".*"'), 'applicationId = "$pkgName"');
+              ktsText = ktsText.replaceAll(RegExp(r'namespace\s*=\s*".*"'), 'namespace = "$pkgName"');
               kts.writeAsStringSync(ktsText);
             }
             
@@ -192,7 +189,11 @@ jobs:
               for (var f in files) {
                 if (f is File && (f.path.endsWith('MainActivity.kt') || f.path.endsWith('MainActivity.java'))) {
                   var content = f.readAsStringSync();
-                  content = content.replaceFirst(RegExp(r'package\s+.*'), 'package \$pkgName');
+                  if (f.path.endsWith('MainActivity.java')) {
+                    content = content.replaceFirst(RegExp(r'package\s+.*'), 'package $pkgName;');
+                  } else {
+                    content = content.replaceFirst(RegExp(r'package\s+.*'), 'package $pkgName');
+                  }
                   f.writeAsStringSync(content);
                 }
               }
@@ -252,3 +253,4 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
+
