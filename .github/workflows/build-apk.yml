@@ -88,17 +88,27 @@ jobs:
           -dontwarn com.google.type.**
           EOF
 
-      - name: Fix Android SDK versions and MultiDex
+      - name: Fix Android SDK versions, MultiDex and Duplicate Classes
         run: |
           echo "android.useAndroidX=true" >> android/gradle.properties
           echo "android.enableJetifier=true" >> android/gradle.properties
           
+          # === ИСПРАВЛЕНИЕ КРАША ПРИ ВХОДЕ (MULTIDEX) ===
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24\n        multiDexEnabled = true/g' android/app/build.gradle.kts 2>/dev/null || true
           
           find /home/runner/.pub-cache/hosted -name "build.gradle" -type f -exec sed -i 's/compileSdkVersion 33/compileSdkVersion 36/g' {} +
           find /home/runner/.pub-cache/hosted -name "build.gradle" -type f -exec sed -i 's/compileSdkVersion 34/compileSdkVersion 36/g' {} +
           find /home/runner/.pub-cache/hosted -name "build.gradle" -type f -exec sed -i 's/compileSdk 33/compileSdk 36/g' {} +
           find /home/runner/.pub-cache/hosted -name "build.gradle" -type f -exec sed -i 's/compileSdk 34/compileSdk 36/g' {} +
+          
+          # === ИСПРАВЛЕНИЕ ОШИБКИ КОМПИЛЯЦИИ (ДУБЛИКАТЫ PROTOBUF) ===
+          cat << 'EOF' >> android/app/build.gradle.kts
+          
+          configurations.all {
+              exclude(group = "com.google.firebase", module = "protolite-well-known-types")
+              exclude(group = "com.google.protobuf", module = "protobuf-lite")
+          }
+          EOF
 
       - name: Sync Package, Fix Dependencies and Sign APK
         env:
@@ -147,7 +157,6 @@ jobs:
                 text = text.replaceAll(RegExp(r'namespace\s*=\s*".*"'), 'namespace = "$pkgName"');
               }
               
-              // === РЕШЕНИЕ ПРОБЛЕМЫ: АВТО-УСТРАНЕНИЕ КОНФЛИКТОВ ЧЕРЕЗ БИЛЛЬ (BOM) ===
               if (text.contains('dependencies {')) {
                 text = text.replaceFirst('dependencies {', 'dependencies {\n    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))');
               }
@@ -204,3 +213,4 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
+
