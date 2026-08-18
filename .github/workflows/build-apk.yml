@@ -25,7 +25,9 @@ jobs:
           channel: 'stable'
           
       - name: Generate system files
-        run: flutter create --platforms=android .
+        run: |
+          rm -rf android
+          flutter create -t app --platforms=android .
         
       - name: Fix Android Manifest (Permissions & SMS)
         run: |
@@ -46,12 +48,87 @@ jobs:
           EOF
           dart fix_manifest.dart
 
+      # === ДОБАВЛЕННЫЙ ШАГ: ВОССТАНАВЛИВАЕМ ПЛАГИН PUSH-УВЕДОМЛЕНИЙ ===
+      - name: Link Google Services Plugin
+        run: |
+          cat << 'EOF' > fix_google_services.dart
+          import 'dart:io';
+          void main() {
+            var settings = File('android/settings.gradle');
+            if (settings.existsSync()) {
+              var text = settings.readAsStringSync();
+              if (text.contains('plugins {') && !text.contains('com.google.gms.google-services')) {
+                text = text.replaceFirst(
+                  'plugins {',
+                  'plugins {\n        id "com.google.gms.google-services" version "4.4.1" apply false'
+                );
+                settings.writeAsStringSync(text);
+              }
+            }
+            
+            var rootGradle = File('android/build.gradle');
+            if (rootGradle.existsSync()) {
+              var text = rootGradle.readAsStringSync();
+              if (!text.contains('com.google.gms:google-services')) {
+                var injections = '''
+                buildscript {
+                    repositories {
+                        google()
+                        mavenCentral()
+                    }
+                    dependencies {
+                        classpath 'com.google.gms:google-services:4.4.1'
+                    }
+                }
+                ''';
+                rootGradle.writeAsStringSync(injections + text);
+              }
+            }
+            
+            var appGradle = File('android/app/build.gradle');
+            if (appGradle.existsSync()) {
+              var text = appGradle.readAsStringSync();
+              if (!text.contains('com.google.gms.google-services')) {
+                appGradle.writeAsStringSync(text + "\napply plugin: 'com.google.gms.google-services'\n");
+              }
+            }
+            
+            var appKts = File('android/app/build.gradle.kts');
+            if (appKts.existsSync()) {
+              var text = appKts.readAsStringSync();
+              if (!text.contains('com.google.gms.google-services')) {
+                appKts.writeAsStringSync(text + '\napply(plugin = "com.google.gms.google-services")\n');
+              }
+            }
+          }
+          EOF
+          dart fix_google_services.dart
+
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Fix Protobuf Duplicate Classes (Kotlin DSL)
+        run: |
+          cat << 'EOF' >> android/app/build.gradle.kts
+          
+          configurations.all {
+              exclude(group = "com.google.firebase", module = "protolite-well-known-types")
+              exclude(group = "com.google.protobuf", module = "protobuf-lite")
+          }
+          EOF
+
+      - name: Add ProGuard Rules for Firestore
+        run: |
+          cat << 'EOF' > android/app/proguard-rules.pro
+          -keep class com.google.rpc.** { *; }
+          -keep class com.google.type.** { *; }
+          -keep class com.google.firebase.firestore.** { *; }
+          -dontwarn com.google.rpc.**
+          -dontwarn com.google.type.**
+          EOF
+
       - name: Fix Android SDK versions and kill JNI bug
         run: |
-          # ВАЖНО: Включаем AndroidX и Jetifier для исправления ошибки CheckDuplicatesRunnable
           echo "android.useAndroidX=true" >> android/gradle.properties
           echo "android.enableJetifier=true" >> android/gradle.properties
           
@@ -68,7 +145,6 @@ jobs:
           sed -i 's/targetSdkVersion 33/targetSdkVersion 34/g' android/app/build.gradle 2>/dev/null || true
           sed -i 's/targetSdk = 33/targetSdk = 34/g' android/app/build.gradle.kts 2>/dev/null || true
           
-          # УБИЙЦА БАГА JNI
           find /home/runner/.pub-cache/hosted -path "*/jni-*/android/build.gradle" -exec perl -0777 -pi -e 's/kotlin\s*\{[^}]*\}//g' {} + || true
 
       - name: Inject Secret Keys, Firebase config and Generate Keystore
@@ -120,7 +196,7 @@ jobs:
           dart setup_signing.dart
 
       - name: Build APK
-        run: flutter build apk --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }}
+        run: flutter build apk --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }} --no-shrink
 
       - name: Rename APK with Date and Time
         run: |
