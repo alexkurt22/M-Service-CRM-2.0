@@ -21,42 +21,33 @@ class _LoginScreenState extends State<LoginScreen> {
   
   bool _isRegistering = false;
   bool _isLoading = false;
-  bool _isWaitingForApproval = false; // Режим ожидания модерации
+  bool _isWaitingForApproval = false; 
 
-  // ❗ ВПИШИ СЮДА СВОЙ НОМЕР ТЕЛЕФОНА ДЛЯ ПОЛУЧЕНИЯ SMS ОТ СОТРУДНИКОВ ❗
+  // СЮДА БУДЕТ ЗАПИСЫВАТЬСЯ ТЕКСТ КРАША
+  String? _uiCrashLog;
+
   final String ownerPhone = '+99363644925'; 
 
-  // --- ФУНКЦИЯ ДЛЯ ОТЛОВА КРАШЕЙ НА ЭКРАНЕ ---
-  void _showFatalError(String error, String stackTrace) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Системная ошибка', style: TextStyle(color: Colors.red)),
-        content: SingleChildScrollView(
-          child: Text('$error\n\n$stackTrace', style: const TextStyle(fontSize: 12)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              setState(() => _isLoading = false);
-            },
-            child: const Text('ЗАКРЫТЬ'),
-          )
-        ],
-      ),
-    );
-  }
-
   Future<void> _handleAuth() async {
+    // 1. Принудительно скрываем клавиатуру (иногда её конфликт вызывает вылет)
+    FocusScope.of(context).unfocus();
+    
     if (!_formKey.currentState!.validate()) return;
 
     final phone = '+993${_phoneController.text.trim()}';
-    setState(() => _isLoading = true);
+    
+    setState(() {
+      _isLoading = true;
+      _uiCrashLog = null; // Очищаем старые ошибки
+    });
     
     try {
-      final doc = await FirebaseFirestore.instance.collection('employees').doc(phone).get();
+      // 2. Ставим таймаут, чтобы зависшая база не убила приложение
+      final doc = await FirebaseFirestore.instance
+          .collection('employees')
+          .doc(phone)
+          .get()
+          .timeout(const Duration(seconds: 15));
       
       if (_isRegistering) {
         if (_passController.text != _confirmPassController.text) {
@@ -70,21 +61,18 @@ class _LoginScreenState extends State<LoginScreen> {
           return;
         }
         
-        // 1. Генерируем 6-значный код
         String code = (Random().nextInt(900000) + 100000).toString();
 
-        // 2. Регистрируем в базу со статусом Ожидания
         await FirebaseFirestore.instance.collection('employees').doc(phone).set({
           'name': _nameController.text.trim(),
           'phone': phone,
           'password': _passController.text.trim(), 
           'is_approved': false,
-          'role': 'waiting', // Роль пока не назначена
-          'verification_code': code, // Сохраняем код для сверки
+          'role': 'waiting', 
+          'verification_code': code, 
           'created_at': FieldValue.serverTimestamp(),
         });
         
-        // 3. Открываем нативное SMS приложение с готовым текстом
         final Uri smsUri = Uri(
           scheme: 'sms',
           path: ownerPhone,
@@ -95,11 +83,8 @@ class _LoginScreenState extends State<LoginScreen> {
         
         if (await canLaunchUrl(smsUri)) {
           await launchUrl(smsUri);
-        } else {
-          debugPrint('Не удалось открыть приложение SMS');
         }
 
-        // 4. Переводим экран в режим ожидания
         setState(() {
           _isRegistering = false;
           _isWaitingForApproval = true;
@@ -110,18 +95,16 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!doc.exists) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Сотрудник не найден. Подайте заявку на регистрацию.'), backgroundColor: Colors.red));
         } else {
-          // ИЗБЕГАЕМ КРАША С ТИПАМИ ДАННЫХ
-          final data = doc.data() as Map<String, dynamic>;
-          final dbPassword = data['password']?.toString() ?? ''; // Конвертируем числовой пароль в строку!
+          // 3. Безопасное извлечение данных (если data пустая, не будет краша)
+          final data = doc.data() as Map<String, dynamic>? ?? {};
+          final dbPassword = data['password']?.toString() ?? ''; 
           final isApproved = data['is_approved'] ?? false;
           
           if (dbPassword != _passController.text.trim()) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Неверный пароль'), backgroundColor: Colors.red));
           } else if (isApproved == false) {
-            // Если пароль верный, но владелец еще не одобрил
             setState(() => _isWaitingForApproval = true);
           } else {
-            // Успешный вход
             final prefs = await SharedPreferences.getInstance();
             await prefs.setString('employee_phone', phone);
             
@@ -132,9 +115,11 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
     } catch (e, stackTrace) {
-      // ЕСЛИ ПРОИЗОЙДЕТ КРАШ, МЫ ЕГО ПОЙМАЕМ И ВЫВЕДЕМ НА ЭКРАН!
+      // 4. ВЫВОДИМ ОШИБКУ ПРЯМО НА ЭКРАН (НЕ В ДИАЛОГ)
       if (mounted) {
-        _showFatalError(e.toString(), stackTrace.toString());
+        setState(() {
+          _uiCrashLog = 'КРАШ БАЗЫ ДАННЫХ:\n$e\n\n$stackTrace';
+        });
       }
     } finally {
       if (mounted && !_isWaitingForApproval) setState(() => _isLoading = false);
@@ -168,27 +153,19 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // Экран ожидания (когда заявка улетела, но ты еще не нажал "Одобрить")
   Widget _buildWaitingScreen() {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Icon(Icons.hourglass_empty, size: 80, color: Colors.orange[600]),
         const SizedBox(height: 24),
-        const Text(
-          'Заявка на рассмотрении',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-        ),
+        const Text('Заявка на рассмотрении', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
         const SizedBox(height: 16),
-        const Text(
-          'Ваши данные отправлены Владельцу.\nОжидайте, пока вам назначат права доступа.',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 16, color: Colors.blueGrey),
-        ),
+        const Text('Ваши данные отправлены Владельцу.\nОжидайте, пока вам назначат права доступа.', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.blueGrey)),
         const SizedBox(height: 32),
         OutlinedButton(
           onPressed: () => setState(() {
-            _isWaitingForApproval = false; // Позволяет вернуться на форму входа
+            _isWaitingForApproval = false; 
             _passController.clear();
           }),
           child: const Text('Вернуться на экран входа'),
@@ -197,7 +174,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // Экран Входа / Регистрации
   Widget _buildAuthForm() {
     return Form(
       key: _formKey,
@@ -206,6 +182,15 @@ class _LoginScreenState extends State<LoginScreen> {
         children: [
           Icon(Icons.admin_panel_settings, size: 64, color: Colors.blueGrey[900]),
           const SizedBox(height: 24),
+          
+          if (_uiCrashLog != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.red[900], borderRadius: BorderRadius.circular(8)),
+              child: Text(_uiCrashLog!, style: const TextStyle(color: Colors.white, fontSize: 12)),
+            ),
+            const SizedBox(height: 16),
+          ],
           
           if (_isRegistering) ...[
             TextFormField(
@@ -268,6 +253,7 @@ class _LoginScreenState extends State<LoginScreen> {
             onPressed: () => setState(() {
               _isRegistering = !_isRegistering;
               _formKey.currentState?.reset();
+              _uiCrashLog = null;
             }),
             child: Text(_isRegistering ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Подать заявку', style: const TextStyle(fontSize: 16)),
           ),
