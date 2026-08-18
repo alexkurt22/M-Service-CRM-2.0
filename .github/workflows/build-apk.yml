@@ -48,33 +48,28 @@ jobs:
           EOF
           dart fix_manifest.dart
 
-      # === ИСПРАВЛЕННЫЙ ШАГ: ПРАВИЛЬНОЕ ДОБАВЛЕНИЕ ПЛАГИНА GOOGLE SERVICES ===
+      # === ЖЕЛЕЗОБЕТОННАЯ УСТАНОВКА ПЛАГИНА FIREBASE ===
       - name: Link Google Services Plugin
         run: |
           cat << 'EOF' > fix_google_services.dart
           import 'dart:io';
           void main() {
-            var settings = File('android/settings.gradle');
-            if (settings.existsSync()) {
-              var text = settings.readAsStringSync();
-              if (text.contains('plugins {') && !text.contains('com.google.gms.google-services')) {
-                text = text.replaceFirst(
-                  'plugins {',
-                  'plugins {\n        id "com.google.gms.google-services" version "4.4.1" apply false'
-                );
-                settings.writeAsStringSync(text);
-              }
-            }
-            
             var rootGradle = File('android/build.gradle');
             if (rootGradle.existsSync()) {
               var text = rootGradle.readAsStringSync();
               if (!text.contains('com.google.gms:google-services')) {
-                text = text.replaceFirst(
-                  'dependencies {',
-                  'dependencies {\n        classpath "com.google.gms:google-services:4.4.1"'
-                );
-                rootGradle.writeAsStringSync(text);
+                var injections = '''
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.google.gms:google-services:4.4.1'
+              }
+          }
+          ''';
+                rootGradle.writeAsStringSync(injections + text);
               }
             }
             
@@ -205,4 +200,3 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
-
