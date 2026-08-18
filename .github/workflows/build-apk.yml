@@ -49,7 +49,6 @@ jobs:
           EOF
           dart fix_manifest.dart
 
-      # === ВОТ ОН, ПРАВИЛЬНЫЙ СКРИПТ ДЛЯ KOTLIN DSL И FIREBASE ===
       - name: Link Google Services Plugin
         run: |
           cat << 'EOF' > fix_google_services.dart
@@ -134,7 +133,7 @@ jobs:
           
           find /home/runner/.pub-cache/hosted -path "*/jni-*/android/build.gradle" -exec perl -0777 -pi -e 's/kotlin\s*\{[^}]*\}//g' {} + || true
 
-      - name: Inject Secret Keys, Firebase config and Generate Keystore
+      - name: Sync Package Name and Generate Keystore
         env:
           FIREBASE_SECRET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           GOOGLE_SERVICES: ${{ secrets.GOOGLE_SERVICES_JSON }}
@@ -146,22 +145,61 @@ jobs:
           
           echo "$GOOGLE_SERVICES" | tr -d '\n\r ' | base64 --decode > android/app/google-services.json
           
-          # === ИСПРАВЛЕНИЕ КРАША ПРИ ЗАПУСКЕ (СИНХРОНИЗАЦИЯ ИМЕНИ ПАКЕТА) ===
-          PACKAGE_NAME=$(jq -r '.client[0].client_info.android_client_info.package_name' android/app/google-services.json)
-          echo "Found Firebase package name: $PACKAGE_NAME"
+          # === УМНАЯ СИНХРОНИЗАЦИЯ ИМЕНИ ПАКЕТА ИЗ DART-НАСТРОЕК ===
+          cat << 'EOF' > sync_package.dart
+          import 'dart:io';
+          import 'dart:convert';
           
-          sed -i "s/applicationId = \".*\"/applicationId = \"$PACKAGE_NAME\"/g" android/app/build.gradle.kts 2>/dev/null || true
-          sed -i "s/namespace = \".*\"/namespace = \"$PACKAGE_NAME\"/g" android/app/build.gradle.kts 2>/dev/null || true
-          
-          MAIN_ACTIVITY_KT=$(find android/app/src/main -name "MainActivity.kt" | head -n 1)
-          if [ -n "$MAIN_ACTIVITY_KT" ]; then
-            sed -i "s/package .*/package $PACKAGE_NAME/g" "$MAIN_ACTIVITY_KT"
-          fi
-          
-          MAIN_ACTIVITY_JAVA=$(find android/app/src/main -name "MainActivity.java" | head -n 1)
-          if [ -n "$MAIN_ACTIVITY_JAVA" ]; then
-            sed -i "s/package .*/package $PACKAGE_NAME;/g" "$MAIN_ACTIVITY_JAVA"
-          fi
+          void main() {
+            var optionsFile = File('lib/firebase_options.dart');
+            if (!optionsFile.existsSync()) return;
+            var text = optionsFile.readAsStringSync();
+            
+            // Ищем уникальный ID Android-приложения
+            RegExp exp = RegExp(r"appId:\s*['\x22](1:[^\x22']+:android:[^\x22']+)['\x22']");
+            var match = exp.firstMatch(text);
+            if (match == null) return;
+            
+            String appId = match.group(1)!;
+            
+            var gsFile = File('android/app/google-services.json');
+            if (!gsFile.existsSync()) return;
+            var gsData = jsonDecode(gsFile.readAsStringSync());
+            
+            String? pkgName;
+            // Ищем пакет именно для этого ID
+            for (var client in gsData['client']) {
+              if (client['client_info']['mobilesdk_app_id'] == appId) {
+                pkgName = client['client_info']['android_client_info']['package_name'];
+                break;
+              }
+            }
+            
+            if (pkgName == null) return;
+            
+            // Прописываем правильное имя
+            var kts = File('android/app/build.gradle.kts');
+            if (kts.existsSync()) {
+              var ktsText = kts.readAsStringSync();
+              ktsText = ktsText.replaceAll(RegExp(r'applicationId\s*=\s*".*"'), 'applicationId = "\$pkgName"');
+              ktsText = ktsText.replaceAll(RegExp(r'namespace\s*=\s*".*"'), 'namespace = "\$pkgName"');
+              kts.writeAsStringSync(ktsText);
+            }
+            
+            var dir = Directory('android/app/src/main');
+            if (dir.existsSync()) {
+              var files = dir.listSync(recursive: true);
+              for (var f in files) {
+                if (f is File && (f.path.endsWith('MainActivity.kt') || f.path.endsWith('MainActivity.java'))) {
+                  var content = f.readAsStringSync();
+                  content = content.replaceFirst(RegExp(r'package\s+.*'), 'package \$pkgName');
+                  f.writeAsStringSync(content);
+                }
+              }
+            }
+          }
+          EOF
+          dart sync_package.dart
           
           keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 1000 -alias upload -storepass mservice123 -keypass mservice123 -dname "CN=Test, OU=Test, O=MService, L=Ashgabat, S=Ahal, C=TM"
           
@@ -214,4 +252,3 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
-
