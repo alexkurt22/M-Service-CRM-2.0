@@ -48,7 +48,7 @@ jobs:
           EOF
           dart fix_manifest.dart
 
-      # === ДОБАВЛЕННЫЙ ШАГ: ВОССТАНАВЛИВАЕМ ПЛАГИН PUSH-УВЕДОМЛЕНИЙ ===
+      # === ИСПРАВЛЕННЫЙ ШАГ: ПРАВИЛЬНОЕ ДОБАВЛЕНИЕ ПЛАГИНА GOOGLE SERVICES ===
       - name: Link Google Services Plugin
         run: |
           cat << 'EOF' > fix_google_services.dart
@@ -70,18 +70,11 @@ jobs:
             if (rootGradle.existsSync()) {
               var text = rootGradle.readAsStringSync();
               if (!text.contains('com.google.gms:google-services')) {
-                var injections = '''
-                buildscript {
-                    repositories {
-                        google()
-                        mavenCentral()
-                    }
-                    dependencies {
-                        classpath 'com.google.gms:google-services:4.4.1'
-                    }
-                }
-                ''';
-                rootGradle.writeAsStringSync(injections + text);
+                text = text.replaceFirst(
+                  'dependencies {',
+                  'dependencies {\n        classpath "com.google.gms:google-services:4.4.1"'
+                );
+                rootGradle.writeAsStringSync(text);
               }
             }
             
@@ -212,3 +205,4 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
+
