@@ -48,43 +48,42 @@ jobs:
           EOF
           dart fix_manifest.dart
 
+      # === ПРАВИЛЬНЫЙ СКРИПТ (ИЗ ПРЕДЫДУЩЕГО ШАГА) С ПОДДЕРЖКОЙ KOTLIN DSL ===
       - name: Link Google Services Plugin
         run: |
           cat << 'EOF' > fix_google_services.dart
           import 'dart:io';
           void main() {
-            var rootGradle = File('android/build.gradle');
-            if (rootGradle.existsSync()) {
-              var text = rootGradle.readAsStringSync();
-              if (!text.contains('com.google.gms:google-services')) {
-                var injections = '''
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.google.gms:google-services:4.4.1'
-              }
-          }
-          ''';
-                rootGradle.writeAsStringSync(injections + text);
+            var sKts = File('android/settings.gradle.kts');
+            if (sKts.existsSync()) {
+              var txt = sKts.readAsStringSync();
+              if (!txt.contains('com.google.gms.google-services')) {
+                txt = txt.replaceFirst('plugins {', 'plugins {\n    id("com.google.gms.google-services") version "4.4.1" apply false');
+                sKts.writeAsStringSync(txt);
               }
             }
-            
-            var appGradle = File('android/app/build.gradle');
-            if (appGradle.existsSync()) {
-              var text = appGradle.readAsStringSync();
-              if (!text.contains('com.google.gms.google-services')) {
-                appGradle.writeAsStringSync(text + "\napply plugin: 'com.google.gms.google-services'\n");
+            var sGr = File('android/settings.gradle');
+            if (sGr.existsSync()) {
+              var txt = sGr.readAsStringSync();
+              if (!txt.contains('com.google.gms.google-services')) {
+                txt = txt.replaceFirst('plugins {', 'plugins {\n    id "com.google.gms.google-services" version "4.4.1" apply false');
+                sGr.writeAsStringSync(txt);
               }
             }
-            
-            var appKts = File('android/app/build.gradle.kts');
-            if (appKts.existsSync()) {
-              var text = appKts.readAsStringSync();
-              if (!text.contains('com.google.gms.google-services')) {
-                appKts.writeAsStringSync(text + '\napply(plugin = "com.google.gms.google-services")\n');
+            var aKts = File('android/app/build.gradle.kts');
+            if (aKts.existsSync()) {
+              var txt = aKts.readAsStringSync();
+              if (!txt.contains('com.google.gms.google-services')) {
+                txt = txt.replaceFirst('plugins {', 'plugins {\n    id("com.google.gms.google-services")');
+                aKts.writeAsStringSync(txt);
+              }
+            }
+            var aGr = File('android/app/build.gradle');
+            if (aGr.existsSync()) {
+              var txt = aGr.readAsStringSync();
+              if (!txt.contains('com.google.gms.google-services')) {
+                txt = txt.replaceFirst('plugins {', 'plugins {\n    id "com.google.gms.google-services"');
+                aGr.writeAsStringSync(txt);
               }
             }
           }
@@ -144,7 +143,7 @@ jobs:
           $FIREBASE_SECRET
           EOF
           
-          # ИСПРАВЛЕНИЕ: Декодируем из Base64 обратно в идеальный JSON файл
+          # === ИСПОЛЬЗУЕМ BASE64 ИЗ ТВОЕГО ПОСЛЕДНЕГО УСПЕШНОГО ШАГА ===
           echo "$GOOGLE_SERVICES" | tr -d '\n\r ' | base64 --decode > android/app/google-services.json
           
           keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 1000 -alias upload -storepass mservice123 -keypass mservice123 -dname "CN=Test, OU=Test, O=MService, L=Ashgabat, S=Ahal, C=TM"
