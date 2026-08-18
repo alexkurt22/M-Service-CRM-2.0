@@ -48,7 +48,6 @@ jobs:
           EOF
           dart fix_manifest.dart
 
-      # === ПРАВИЛЬНЫЙ СКРИПТ (ИЗ ПРЕДЫДУЩЕГО ШАГА) С ПОДДЕРЖКОЙ KOTLIN DSL ===
       - name: Link Google Services Plugin
         run: |
           cat << 'EOF' > fix_google_services.dart
@@ -143,8 +142,13 @@ jobs:
           $FIREBASE_SECRET
           EOF
           
-          # === ИСПОЛЬЗУЕМ BASE64 ИЗ ТВОЕГО ПОСЛЕДНЕГО УСПЕШНОГО ШАГА ===
           echo "$GOOGLE_SERVICES" | tr -d '\n\r ' | base64 --decode > android/app/google-services.json
+          
+          # === АВТО-ПОДСТАНОВКА ПРАВИЛЬНОГО ИМЕНИ ПАКЕТА ИЗ FIREBASE ===
+          PACKAGE_NAME=$(jq -r '.client[0].client_info.android_client_info.package_name' android/app/google-services.json)
+          echo "Found Firebase package name: $PACKAGE_NAME"
+          sed -i "s/applicationId = \"com.example.mservice_crm\"/applicationId = \"$PACKAGE_NAME\"/g" android/app/build.gradle.kts
+          sed -i "s/namespace = \"com.example.mservice_crm\"/namespace = \"$PACKAGE_NAME\"/g" android/app/build.gradle.kts
           
           keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 1000 -alias upload -storepass mservice123 -keypass mservice123 -dname "CN=Test, OU=Test, O=MService, L=Ashgabat, S=Ahal, C=TM"
           
@@ -197,4 +201,3 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
-
