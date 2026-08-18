@@ -94,12 +94,21 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Fix Android SDK versions and kill JNI bug
+      # === ТОТ САМЫЙ СНАЙПЕРСКИЙ ВЫСТРЕЛ ПО ДУБЛИКАТАМ ===
+      - name: Fix Protobuf Duplicate Classes (Kotlin DSL)
+        run: |
+          cat << 'EOF' >> android/app/build.gradle.kts
+          
+          configurations.all {
+              exclude(group = "com.google.firebase", module = "protolite-well-known-types")
+          }
+          EOF
+
+      - name: Fix Android SDK versions and MultiDex
         run: |
           echo "android.useAndroidX=true" >> android/gradle.properties
           echo "android.enableJetifier=true" >> android/gradle.properties
           
-          # === ИСПРАВЛЕНИЕ КРАША FIRESTORE: ПОВЫШАЕМ MIN SDK ДО 24 И ВЛЮЧАЕМ MULTIDEX ===
           sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24\n        multiDexEnabled true/g' android/app/build.gradle 2>/dev/null || true
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24\n        multiDexEnabled = true/g' android/app/build.gradle.kts 2>/dev/null || true
           
@@ -237,3 +246,4 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
+
