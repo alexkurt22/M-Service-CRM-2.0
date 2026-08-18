@@ -16,11 +16,9 @@ import 'screens/chat_lists_screen.dart';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
-  // ЛОВУШКА ДЛЯ ОШИБОК
   try {
     WidgetsFlutterBinding.ensureInitialized();
     
-    // Пытаемся запустить Firebase
     await Firebase.initializeApp(
       options: (kIsWeb || Platform.isWindows) 
           ? DefaultFirebaseOptions.web 
@@ -33,17 +31,30 @@ void main() async {
 
     Widget startScreen = const LoginScreen();
 
+    // Защита от вечного зависания: даем базе ровно 5 секунд на ответ
     if (savedPhone != null && savedPhone.isNotEmpty) {
-      final doc = await FirebaseFirestore.instance.collection('employees').doc(savedPhone).get();
-      if (doc.exists && doc.data()?['is_approved'] == true) {
-        startScreen = const DashboardScreen();
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('employees')
+            .doc(savedPhone)
+            .get()
+            .timeout(const Duration(seconds: 5));
+            
+        if (doc.exists) {
+          final data = doc.data() as Map<String, dynamic>? ?? {};
+          if (data['is_approved'] == true) {
+            startScreen = const DashboardScreen();
+          }
+        }
+      } catch (e) {
+        debugPrint('Ошибка сессии при запуске: $e');
+        // Если нет интернета, просто выкинет на LoginScreen
       }
     }
 
     runApp(MyApp(startScreen: startScreen, initialDarkMode: isDarkSaved));
 
   } catch (e, stackTrace) {
-    // ЕСЛИ ПРОИЗОШЕЛ КРАШ - ЗАПИСЫВАЕМ В ФАЙЛ И ВЫВОДИМ НА ЭКРАН
     if (!kIsWeb && Platform.isWindows) {
       File('crash_log.txt').writeAsStringSync('CRASH: $e\n\n$stackTrace');
     }
@@ -84,7 +95,6 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> _setupPushRouting() async {
-    // На Windows отключаем слушатель Push-уведомлений, чтобы не крашилось
     if (!kIsWeb && Platform.isWindows) return;
 
     try {
