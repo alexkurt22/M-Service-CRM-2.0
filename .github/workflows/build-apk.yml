@@ -38,6 +38,7 @@ jobs:
             var text = f.readAsStringSync();
             var additions = '''
             <uses-permission android:name="android.permission.INTERNET" />
+            <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
             <queries><intent><action android:name="android.intent.action.VIEW"/><data android:scheme="sms"/></intent></queries>
             <uses-permission android:name="android.permission.CAMERA" />
             <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
@@ -93,30 +94,14 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Fix Protobuf Duplicate Classes (Kotlin DSL)
-        run: |
-          cat << 'EOF' >> android/app/build.gradle.kts
-          
-          configurations.all {
-              exclude(group = "com.google.firebase", module = "protolite-well-known-types")
-              exclude(group = "com.google.protobuf", module = "protobuf-lite")
-          }
-          EOF
-
-      - name: Add ProGuard Rules for Firestore
-        run: |
-          cat << 'EOF' > android/app/proguard-rules.pro
-          -keep class com.google.rpc.** { *; }
-          -keep class com.google.type.** { *; }
-          -keep class com.google.firebase.firestore.** { *; }
-          -dontwarn com.google.rpc.**
-          -dontwarn com.google.type.**
-          EOF
-
       - name: Fix Android SDK versions and kill JNI bug
         run: |
           echo "android.useAndroidX=true" >> android/gradle.properties
           echo "android.enableJetifier=true" >> android/gradle.properties
+          
+          # === ИСПРАВЛЕНИЕ КРАША FIRESTORE: ПОВЫШАЕМ MIN SDK ДО 24 И ВЛЮЧАЕМ MULTIDEX ===
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24\n        multiDexEnabled true/g' android/app/build.gradle 2>/dev/null || true
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24\n        multiDexEnabled = true/g' android/app/build.gradle.kts 2>/dev/null || true
           
           find /home/runner/.pub-cache/hosted -name "build.gradle" -type f -exec sed -i 's/compileSdkVersion 33/compileSdkVersion 36/g' {} +
           find /home/runner/.pub-cache/hosted -name "build.gradle" -type f -exec sed -i 's/compileSdkVersion 34/compileSdkVersion 36/g' {} +
@@ -200,8 +185,41 @@ jobs:
           }
           EOF
           dart sync_package.dart
+          
+          keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 1000 -alias upload -storepass mservice123 -keypass mservice123 -dname "CN=Test, OU=Test, O=MService, L=Ashgabat, S=Ahal, C=TM"
+          
+          cat << 'EOF' > setup_signing.dart
+          import 'dart:io';
+          void main() {
+            var kts = File('android/app/build.gradle.kts');
+            var gradle = File('android/app/build.gradle');
+            if (kts.existsSync()) {
+              var text = kts.readAsStringSync();
+              text = text.replaceFirst(
+                'buildTypes {',
+                'signingConfigs {\n        create("release") {\n            storeFile = file("upload-keystore.jks")\n            storePassword = "mservice123"\n            keyAlias = "upload"\n            keyPassword = "mservice123"\n        }\n    }\n    buildTypes {'
+              );
+              text = text.replaceAll(
+                'signingConfigs.getByName("debug")', 
+                'signingConfigs.getByName("release")\n            isMinifyEnabled = false\n            isShrinkResources = false\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")'
+              );
+              kts.writeAsStringSync(text);
+            } else if (gradle.existsSync()) {
+              var text = gradle.readAsStringSync();
+              text = text.replaceFirst(
+                'buildTypes {',
+                'signingConfigs {\n        release {\n            storeFile file("upload-keystore.jks")\n            storePassword "mservice123"\n            keyAlias "upload"\n            keyPassword "mservice123"\n        }\n    }\n    buildTypes {'
+              );
+              text = text.replaceAll(
+                'signingConfig signingConfigs.debug', 
+                'signingConfig signingConfigs.release\n            minifyEnabled false\n            shrinkResources false\n            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"'
+              );
+              gradle.writeAsStringSync(text);
+            }
+          }
+          EOF
+          dart setup_signing.dart
 
-      # === ВАЖНО: ТЕПЕРЬ СОБИРАЕМ DEBUG-ВЕРСИЮ ДЛЯ ДИАГНОСТИКИ ===
       - name: Build APK
         run: flutter build apk --debug --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }}
 
@@ -219,4 +237,3 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
-
