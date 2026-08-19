@@ -1,4 +1,4 @@
-name: Build APK
+name: Build APK 
 
 on:
   push:
@@ -25,9 +25,7 @@ jobs:
           channel: 'stable'
           
       - name: Generate system files
-        run: |
-          rm -rf android
-          flutter create -t app --platforms=android .
+        run: flutter create --platforms=android .
         
       - name: Fix Android Manifest (Permissions & SMS)
         run: |
@@ -37,8 +35,6 @@ jobs:
             var f = File('android/app/src/main/AndroidManifest.xml');
             var text = f.readAsStringSync();
             var additions = '''
-            <uses-permission android:name="android.permission.INTERNET" />
-            <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
             <queries><intent><action android:name="android.intent.action.VIEW"/><data android:scheme="sms"/></intent></queries>
             <uses-permission android:name="android.permission.CAMERA" />
             <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
@@ -50,151 +46,81 @@ jobs:
           EOF
           dart fix_manifest.dart
 
-      - name: Link Google Services Plugin
-        run: |
-          cat << 'EOF' > fix_google_services.dart
-          import 'dart:io';
-          void main() {
-            var sKts = File('android/settings.gradle.kts');
-            if (sKts.existsSync()) {
-              var txt = sKts.readAsStringSync();
-              if (!txt.contains('com.google.gms.google-services')) {
-                txt = txt.replaceFirst('plugins {', 'plugins {\n    id("com.google.gms.google-services") version "4.4.1" apply false');
-                sKts.writeAsStringSync(txt);
-              }
-            }
-            var aKts = File('android/app/build.gradle.kts');
-            if (aKts.existsSync()) {
-              var txt = aKts.readAsStringSync();
-              if (!txt.contains('com.google.gms.google-services')) {
-                txt = txt.replaceFirst('plugins {', 'plugins {\n    id("com.google.gms.google-services")');
-                aKts.writeAsStringSync(txt);
-              }
-            }
-          }
-          EOF
-          dart fix_google_services.dart
-
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Add ProGuard Rules for Firestore
+      # === ГЕНИАЛЬНОЕ РЕШЕНИЕ: ПРОСТО ВЫРАВНИВАЕМ ВЕРСИИ, НИЧЕГО НЕ УДАЛЯЯ ===
+      - name: Fix Protobuf Duplicate Classes
         run: |
-          cat << 'EOF' > android/app/proguard-rules.pro
-          -keep class com.google.rpc.** { *; }
-          -keep class com.google.type.** { *; }
-          -keep class com.google.firebase.firestore.** { *; }
-          -dontwarn com.google.rpc.**
-          -dontwarn com.google.type.**
+          cat << 'EOF' >> android/app/build.gradle.kts
+          
+          configurations.all {
+              resolutionStrategy.force("com.google.protobuf:protobuf-javalite:3.21.7")
+          }
           EOF
 
-      - name: Fix Android SDK versions, MultiDex and Duplicate Classes
+      - name: Fix Android SDK versions and kill JNI bug
         run: |
+          # ВАЖНО: Включаем AndroidX и Jetifier для исправления ошибки CheckDuplicatesRunnable
           echo "android.useAndroidX=true" >> android/gradle.properties
           echo "android.enableJetifier=true" >> android/gradle.properties
           
-          # === ИСПРАВЛЕНИЕ КРАША ПРИ ВХОДЕ (MULTIDEX) ===
+          # ВАЖНО: Включаем MultiDex и API 24, чтобы Firestore загрузился и не убил приложение при запуске
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24\n        multiDexEnabled = true/g' android/app/build.gradle.kts 2>/dev/null || true
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24\n        multiDexEnabled true/g' android/app/build.gradle 2>/dev/null || true
           
           find /home/runner/.pub-cache/hosted -name "build.gradle" -type f -exec sed -i 's/compileSdkVersion 33/compileSdkVersion 36/g' {} +
           find /home/runner/.pub-cache/hosted -name "build.gradle" -type f -exec sed -i 's/compileSdkVersion 34/compileSdkVersion 36/g' {} +
           find /home/runner/.pub-cache/hosted -name "build.gradle" -type f -exec sed -i 's/compileSdk 33/compileSdk 36/g' {} +
           find /home/runner/.pub-cache/hosted -name "build.gradle" -type f -exec sed -i 's/compileSdk 34/compileSdk 36/g' {} +
+          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/g' android/app/build.gradle 2>/dev/null || true
+          sed -i 's/compileSdkVersion 33/compileSdkVersion 36/g' android/app/build.gradle 2>/dev/null || true
+          sed -i 's/compileSdkVersion 34/compileSdkVersion 36/g' android/app/build.gradle 2>/dev/null || true
+          sed -i 's/compileSdk = 33/compileSdk = 36/g' android/app/build.gradle.kts 2>/dev/null || true
+          sed -i 's/compileSdk = 34/compileSdk = 36/g' android/app/build.gradle.kts 2>/dev/null || true
+          sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 34/g' android/app/build.gradle 2>/dev/null || true
+          sed -i 's/targetSdkVersion 33/targetSdkVersion 34/g' android/app/build.gradle 2>/dev/null || true
+          sed -i 's/targetSdk = 33/targetSdk = 34/g' android/app/build.gradle.kts 2>/dev/null || true
           
-          # === ИСПРАВЛЕНИЕ ОШИБКИ КОМПИЛЯЦИИ (ДУБЛИКАТЫ PROTOBUF) ===
-          cat << 'EOF' >> android/app/build.gradle.kts
-          
-          configurations.all {
-              exclude(group = "com.google.firebase", module = "protolite-well-known-types")
-              exclude(group = "com.google.protobuf", module = "protobuf-lite")
-          }
-          EOF
+          # УБИЙЦА БАГА JNI
+          find /home/runner/.pub-cache/hosted -path "*/jni-*/android/build.gradle" -exec perl -0777 -pi -e 's/kotlin\s*\{[^}]*\}//g' {} + || true
 
-      - name: Sync Package, Fix Dependencies and Sign APK
+      - name: Inject Secret Keys and Permanent Keystore
         env:
           FIREBASE_SECRET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          GOOGLE_SERVICES: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          KEYSTORE_SECRET: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           mkdir -p assets
-          cat << EOF > assets/firebase_credentials.json
-          $FIREBASE_SECRET
-          EOF
+          echo -n "$FIREBASE_SECRET" | tr -d '\n\r ' | base64 -d -i > assets/firebase_credentials.json
           
-          echo "$GOOGLE_SERVICES" | tr -d '\n\r ' | base64 --decode > android/app/google-services.json
+          echo -n "$KEYSTORE_SECRET" | tr -d '\n\r ' | base64 -d -i > android/app/upload-keystore.jks
           
-          cat << 'EOF' > setup.dart
+          cat << 'EOF' > setup_signing.dart
           import 'dart:io';
-          import 'dart:convert';
-          
           void main() {
-            String? pkgName;
-            var optionsFile = File('lib/firebase_options.dart');
-            if (optionsFile.existsSync()) {
-              var text = optionsFile.readAsStringSync();
-              RegExp exp = RegExp(r"appId:\s*['\x22](1:[^\x22']+:android:[^\x22']+)['\x22']");
-              var match = exp.firstMatch(text);
-              if (match != null) {
-                String appId = match.group(1)!;
-                var gsFile = File('android/app/google-services.json');
-                if (gsFile.existsSync()) {
-                  var gsData = jsonDecode(gsFile.readAsStringSync());
-                  for (var client in gsData['client']) {
-                    if (client['client_info']['mobilesdk_app_id'] == appId) {
-                      pkgName = client['client_info']['android_client_info']['package_name'];
-                      break;
-                    }
-                  }
-                }
-              }
-            }
-            
             var kts = File('android/app/build.gradle.kts');
+            var gradle = File('android/app/build.gradle');
             if (kts.existsSync()) {
               var text = kts.readAsStringSync();
-              
-              if (pkgName != null) {
-                text = text.replaceAll(RegExp(r'applicationId\s*=\s*".*"'), 'applicationId = "$pkgName"');
-                text = text.replaceAll(RegExp(r'namespace\s*=\s*".*"'), 'namespace = "$pkgName"');
-              }
-              
-              if (text.contains('dependencies {')) {
-                text = text.replaceFirst('dependencies {', 'dependencies {\n    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))');
-              }
-              
               text = text.replaceFirst(
                 'buildTypes {',
                 'signingConfigs {\n        create("release") {\n            storeFile = file("upload-keystore.jks")\n            storePassword = "mservice123"\n            keyAlias = "upload"\n            keyPassword = "mservice123"\n        }\n    }\n    buildTypes {'
               );
-              text = text.replaceAll(
-                'signingConfigs.getByName("debug")', 
-                'signingConfigs.getByName("release")\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")'
-              );
-              
+              text = text.replaceAll('signingConfigs.getByName("debug")', 'signingConfigs.getByName("release")');
+              text = text.replaceAll('signingConfig = signingConfigs.debug', 'signingConfig = signingConfigs.getByName("release")');
               kts.writeAsStringSync(text);
-            }
-            
-            if (pkgName != null) {
-              var dir = Directory('android/app/src/main');
-              if (dir.existsSync()) {
-                var files = dir.listSync(recursive: true);
-                for (var f in files) {
-                  if (f is File && (f.path.endsWith('MainActivity.kt') || f.path.endsWith('MainActivity.java'))) {
-                    var content = f.readAsStringSync();
-                    if (f.path.endsWith('MainActivity.java')) {
-                      content = content.replaceFirst(RegExp(r'package\s+.*'), 'package $pkgName;');
-                    } else {
-                      content = content.replaceFirst(RegExp(r'package\s+.*'), 'package $pkgName');
-                    }
-                    f.writeAsStringSync(content);
-                  }
-                }
-              }
+            } else if (gradle.existsSync()) {
+              var text = gradle.readAsStringSync();
+              text = text.replaceFirst(
+                'buildTypes {',
+                'signingConfigs {\n        release {\n            storeFile file("upload-keystore.jks")\n            storePassword "mservice123"\n            keyAlias "upload"\n            keyPassword "mservice123"\n        }\n    }\n    buildTypes {'
+              );
+              text = text.replaceAll('signingConfig signingConfigs.debug', 'signingConfig signingConfigs.release');
+              gradle.writeAsStringSync(text);
             }
           }
           EOF
-          dart setup.dart
-          
-          keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 1000 -alias upload -storepass mservice123 -keypass mservice123 -dname "CN=Test, OU=Test, O=MService, L=Ashgabat, S=Ahal, C=TM"
+          dart setup_signing.dart
 
       - name: Build APK
         run: flutter build apk --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }}
@@ -213,4 +139,3 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
-
