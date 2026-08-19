@@ -4,8 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:barcode_scan2/barcode_scan2.dart';
-import 'package:permission_handler/permission_handler.dart'; // Добавлен для починки сканера
+import 'package:mobile_scanner/mobile_scanner.dart'; // <--- НАШ НОВЫЙ СОВРЕМЕННЫЙ СКАНЕР
+import 'package:permission_handler/permission_handler.dart'; 
 
 class StoreManagementScreen extends StatefulWidget {
   const StoreManagementScreen({super.key});
@@ -50,19 +50,21 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
       }
     }
 
-    // ИСПРАВЛЕННЫЙ СКАНЕР ШТРИХ-КОДА С ЗАПРОСОМ РАЗРЕШЕНИЯ НА КАМЕРУ
+    // === ИНТЕГРАЦИЯ НОВОГО СКАНЕРА ПРИ ДОБАВЛЕНИИ ТОВАРА ===
     Future<void> openBarcodeScanner(StateSetter setModalState) async {
       var status = await Permission.camera.request();
       if (status.isGranted) {
-        try {
-          var result = await BarcodeScanner.scan();
-          if (result.type == ResultType.Barcode && result.rawContent.isNotEmpty) {
-            setModalState(() => barcodeController.text = result.rawContent);
-          }
-        } catch (e) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка сканирования: $e'), backgroundColor: Colors.red));
-          }
+        if (!context.mounted) return;
+        
+        // Открываем наш новый экран сканирования
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const SimpleBarcodeScannerPage()),
+        );
+        
+        // Если вернулся результат, записываем его в текстовое поле
+        if (result != null && result is String && result.isNotEmpty) {
+          setModalState(() => barcodeController.text = result);
         }
       } else {
         if (context.mounted) {
@@ -269,22 +271,22 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
     FirebaseFirestore.instance.collection('products').doc(docId).delete();
   }
 
-  // --- ИСПРАВЛЕННЫЙ СКАНЕР ДЛЯ ПОИСКА ТОВАРОВ ПО ШТРИХ-КОДУ ---
+  // === ИНТЕГРАЦИЯ НОВОГО СКАНЕРА ДЛЯ ПОИСКА ТОВАРОВ ===
   Future<void> _scanBarcodeForSearch() async {
     var status = await Permission.camera.request();
     if (status.isGranted) {
-      try {
-        var result = await BarcodeScanner.scan();
-        if (result.type == ResultType.Barcode && result.rawContent.isNotEmpty) {
-          setState(() {
-            _searchController.text = result.rawContent;
-            _searchQuery = result.rawContent.toLowerCase();
-          });
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка сканирования: $e'), backgroundColor: Colors.red));
-        }
+      if (!mounted) return;
+      
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const SimpleBarcodeScannerPage()),
+      );
+      
+      if (result != null && result is String && result.isNotEmpty) {
+        setState(() {
+          _searchController.text = result;
+          _searchQuery = result.toLowerCase();
+        });
       }
     } else {
       if (mounted) {
@@ -305,7 +307,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
         title: const Text('Склад и Витрина', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showProductDialog(), // Откроется как добавление (без existingDoc)
+        onPressed: () => _showProductDialog(), 
         backgroundColor: Colors.blueGrey[800],
         icon: const Icon(Icons.add_shopping_cart, color: Colors.white),
         label: const Text('Добавить товар', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -323,7 +325,6 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                 hintText: 'Поиск по названию или штрихкоду...',
                 hintStyle: TextStyle(color: isDark ? Colors.white54 : Colors.grey),
                 prefixIcon: Icon(Icons.search, color: isDark ? Colors.white54 : Colors.grey),
-                // ИКОНКА СКАНЕРА В СТРОКЕ ПОИСКА
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.qr_code_scanner, color: Colors.blueAccent),
                   onPressed: _scanBarcodeForSearch,
@@ -467,3 +468,36 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   }
 }
 
+// === НОВЫЙ ЭКРАН СКАНЕРА (MOBILE_SCANNER) ===
+class SimpleBarcodeScannerPage extends StatefulWidget {
+  const SimpleBarcodeScannerPage({super.key});
+
+  @override
+  State<SimpleBarcodeScannerPage> createState() => _SimpleBarcodeScannerPageState();
+}
+
+class _SimpleBarcodeScannerPageState extends State<SimpleBarcodeScannerPage> {
+  bool _isScanned = false; // Защита от двойного считывания
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Наведите камеру на штрихкод', style: TextStyle(fontSize: 16)),
+        backgroundColor: Colors.blueGrey[900],
+        foregroundColor: Colors.white,
+      ),
+      body: MobileScanner(
+        onDetect: (capture) {
+          if (_isScanned) return; // Если уже сосканировали, игнорируем остальные кадры
+          
+          final barcodes = capture.barcodes;
+          if (barcodes.isNotEmpty && barcodes.first.rawValue != null) {
+            _isScanned = true;
+            Navigator.pop(context, barcodes.first.rawValue); // Возвращаемся и передаем код
+          }
+        },
+      ),
+    );
+  }
+}
