@@ -15,13 +15,13 @@ dependencies:
   intl: ^0.18.0
   shared_preferences: ^2.2.3
   url_launcher: ^6.3.0
-  share_plus: ^9.0.0
+  share_plus: ^12.0.2       # <--- ОБНОВИЛИ ВЕРСИЮ ЗДЕСЬ
   
   # --- Firebase Services ---
-  firebase_core: ^2.32.0
-  cloud_firestore: ^4.17.5
-  firebase_storage: ^11.6.0
-  firebase_messaging: ^14.9.4
+  firebase_core: ^3.1.0
+  cloud_firestore: ^5.0.1
+  firebase_storage: ^12.4.10
+  firebase_messaging: ^15.2.10
   
   # --- Google API (Push Notifications & Monitoring) ---
   googleapis_auth: ^1.4.1
@@ -32,12 +32,8 @@ dependencies:
   image_picker: ^1.1.2
   file_picker: ^8.0.0
   path_provider: ^2.1.2
-  barcode_scan2: ^4.3.0
-  mobile_scanner: ^5.0.3        # Оставляем, чтобы старые экраны не крашили сборку
-  permission_handler: ^11.3.1   # Нужен для камеры
-  
-  # --- Audio & Notifications ---
-  # flutter_ringtone_player УДАЛЕН (ВЫЗЫВАЛ ЭХО В УВЕДОМЛЕНИЯХ)
+  mobile_scanner: ^5.0.3        
+  permission_handler: ^11.3.1   
 
 dev_dependencies:
   flutter_test:
