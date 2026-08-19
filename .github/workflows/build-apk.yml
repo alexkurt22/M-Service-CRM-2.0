@@ -49,7 +49,7 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # === ГЕНИАЛЬНОЕ РЕШЕНИЕ: ПРОСТО ВЫРАВНИВАЕМ ВЕРСИИ, НИЧЕГО НЕ УДАЛЯЯ ===
+      # === ВЫРАВНИВАЕМ ВЕРСИИ PROTOBUF ===
       - name: Fix Protobuf Duplicate Classes
         run: |
           cat << 'EOF' >> android/app/build.gradle.kts
@@ -59,13 +59,24 @@ jobs:
           }
           EOF
 
+      # === ЗАЩИТА ОТ УДАЛЕНИЯ КЛАССОВ ПРИ СЖАТИИ R8 (PROGUARD) ===
+      - name: Add ProGuard Rules
+        run: |
+          cat << 'EOF' > android/app/proguard-rules.pro
+          -dontwarn de.mintware.barcode_scan.**
+          -dontwarn com.google.protobuf.**
+          -keep class com.google.protobuf.** { *; }
+          -keep class com.google.rpc.** { *; }
+          -keep class com.google.type.** { *; }
+          -dontwarn com.google.rpc.**
+          -dontwarn com.google.type.**
+          EOF
+
       - name: Fix Android SDK versions and kill JNI bug
         run: |
-          # ВАЖНО: Включаем AndroidX и Jetifier для исправления ошибки CheckDuplicatesRunnable
           echo "android.useAndroidX=true" >> android/gradle.properties
           echo "android.enableJetifier=true" >> android/gradle.properties
           
-          # ВАЖНО: Включаем MultiDex и API 24, чтобы Firestore загрузился и не убил приложение при запуске
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24\n        multiDexEnabled = true/g' android/app/build.gradle.kts 2>/dev/null || true
           sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24\n        multiDexEnabled true/g' android/app/build.gradle 2>/dev/null || true
           
@@ -82,7 +93,6 @@ jobs:
           sed -i 's/targetSdkVersion 33/targetSdkVersion 34/g' android/app/build.gradle 2>/dev/null || true
           sed -i 's/targetSdk = 33/targetSdk = 34/g' android/app/build.gradle.kts 2>/dev/null || true
           
-          # УБИЙЦА БАГА JNI
           find /home/runner/.pub-cache/hosted -path "*/jni-*/android/build.gradle" -exec perl -0777 -pi -e 's/kotlin\s*\{[^}]*\}//g' {} + || true
 
       - name: Inject Secret Keys and Permanent Keystore
@@ -107,7 +117,8 @@ jobs:
                 'signingConfigs {\n        create("release") {\n            storeFile = file("upload-keystore.jks")\n            storePassword = "mservice123"\n            keyAlias = "upload"\n            keyPassword = "mservice123"\n        }\n    }\n    buildTypes {'
               );
               text = text.replaceAll('signingConfigs.getByName("debug")', 'signingConfigs.getByName("release")');
-              text = text.replaceAll('signingConfig = signingConfigs.debug', 'signingConfig = signingConfigs.getByName("release")');
+              // ВАЖНО: Подключаем файл ProGuard к Kotlin сборке
+              text = text.replaceAll('signingConfig = signingConfigs.debug', 'signingConfig = signingConfigs.getByName("release")\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")');
               kts.writeAsStringSync(text);
             } else if (gradle.existsSync()) {
               var text = gradle.readAsStringSync();
@@ -116,6 +127,8 @@ jobs:
                 'signingConfigs {\n        release {\n            storeFile file("upload-keystore.jks")\n            storePassword "mservice123"\n            keyAlias "upload"\n            keyPassword "mservice123"\n        }\n    }\n    buildTypes {'
               );
               text = text.replaceAll('signingConfig signingConfigs.debug', 'signingConfig signingConfigs.release');
+              // ВАЖНО: Подключаем файл ProGuard к Groovy сборке
+              text = text.replaceAll('signingConfig signingConfigs.debug', 'signingConfig signingConfigs.release\n            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"');
               gradle.writeAsStringSync(text);
             }
           }
@@ -139,3 +152,4 @@ jobs:
         with:
           name: ${{ env.FINAL_ZIP_NAME }}
           path: build/app/outputs/flutter-apk/${{ env.FINAL_APK_NAME }}
+
