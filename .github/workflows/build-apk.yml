@@ -84,26 +84,35 @@ jobs:
           find /home/runner/.pub-cache/hosted -name "build.gradle" -type f -exec sed -i 's/compileSdkVersion 34/compileSdkVersion 36/g' {} +
           find /home/runner/.pub-cache/hosted -name "build.gradle" -type f -exec sed -i 's/compileSdk 33/compileSdk 36/g' {} +
           find /home/runner/.pub-cache/hosted -name "build.gradle" -type f -exec sed -i 's/compileSdk 34/compileSdk 36/g' {} +
-          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/g' android/app/build.gradle 2>/dev/null || true
-          sed -i 's/compileSdkVersion 33/compileSdkVersion 36/g' android/app/build.gradle 2>/dev/null || true
-          sed -i 's/compileSdkVersion 34/compileSdkVersion 36/g' android/app/build.gradle 2>/dev/null || true
-          sed -i 's/compileSdk = 33/compileSdk = 36/g' android/app/build.gradle.kts 2>/dev/null || true
-          sed -i 's/compileSdk = 34/compileSdk = 36/g' android/app/build.gradle.kts 2>/dev/null || true
-          sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 34/g' android/app/build.gradle 2>/dev/null || true
-          sed -i 's/targetSdkVersion 33/targetSdkVersion 34/g' android/app/build.gradle 2>/dev/null || true
-          sed -i 's/targetSdk = 33/targetSdk = 34/g' android/app/build.gradle.kts 2>/dev/null || true
           
           find /home/runner/.pub-cache/hosted -path "*/jni-*/android/build.gradle" -exec perl -0777 -pi -e 's/kotlin\s*\{[^}]*\}//g' {} + || true
 
-      - name: Inject Secret Keys and Permanent Keystore
+      # === ГЕНЕРАЦИЯ ВРЕМЕННОГО КЛЮЧА И УМНАЯ РАСШИФРОВКА FIREBASE ===
+      - name: Inject Secret Keys and Generate Keystore
         env:
           FIREBASE_SECRET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          KEYSTORE_SECRET: ${{ secrets.KEYSTORE_BASE64 }}
+          GOOGLE_SERVICES: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           mkdir -p assets
-          echo -n "$FIREBASE_SECRET" | tr -d '\n\r ' | base64 -d -i > assets/firebase_credentials.json
           
-          echo -n "$KEYSTORE_SECRET" | tr -d '\n\r ' | base64 -d -i > android/app/upload-keystore.jks
+          # Умная проверка для Firebase Service Account
+          if echo "$FIREBASE_SECRET" | tr -d '\n\r ' | base64 -d > /dev/null 2>&1; then
+            echo "$FIREBASE_SECRET" | tr -d '\n\r ' | base64 -d > assets/firebase_credentials.json
+          else
+            echo "$FIREBASE_SECRET" > assets/firebase_credentials.json
+          fi
+          
+          # Умная проверка для Google Services JSON
+          if [ -n "$GOOGLE_SERVICES" ]; then
+            if echo "$GOOGLE_SERVICES" | tr -d '\n\r ' | base64 -d > /dev/null 2>&1; then
+              echo "$GOOGLE_SERVICES" | tr -d '\n\r ' | base64 -d > android/app/google-services.json
+            else
+              echo "$GOOGLE_SERVICES" > android/app/google-services.json
+            fi
+          fi
+          
+          # СОЗДАЕМ ОДНОРАЗОВЫЙ КЛЮЧ (KEYSTORE ИЗ СЕКРЕТОВ БОЛЬШЕ НЕ НУЖЕН!)
+          keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 1000 -alias upload -storepass mservice123 -keypass mservice123 -dname "CN=Test, OU=Test, O=MService, L=Ashgabat, S=Ahal, C=TM"
           
           cat << 'EOF' > setup_signing.dart
           import 'dart:io';
@@ -117,7 +126,6 @@ jobs:
                 'signingConfigs {\n        create("release") {\n            storeFile = file("upload-keystore.jks")\n            storePassword = "mservice123"\n            keyAlias = "upload"\n            keyPassword = "mservice123"\n        }\n    }\n    buildTypes {'
               );
               text = text.replaceAll('signingConfigs.getByName("debug")', 'signingConfigs.getByName("release")');
-              // ВАЖНО: Подключаем файл ProGuard к Kotlin сборке
               text = text.replaceAll('signingConfig = signingConfigs.debug', 'signingConfig = signingConfigs.getByName("release")\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")');
               kts.writeAsStringSync(text);
             } else if (gradle.existsSync()) {
@@ -127,7 +135,6 @@ jobs:
                 'signingConfigs {\n        release {\n            storeFile file("upload-keystore.jks")\n            storePassword "mservice123"\n            keyAlias "upload"\n            keyPassword "mservice123"\n        }\n    }\n    buildTypes {'
               );
               text = text.replaceAll('signingConfig signingConfigs.debug', 'signingConfig signingConfigs.release');
-              // ВАЖНО: Подключаем файл ProGuard к Groovy сборке
               text = text.replaceAll('signingConfig signingConfigs.debug', 'signingConfig signingConfigs.release\n            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"');
               gradle.writeAsStringSync(text);
             }
