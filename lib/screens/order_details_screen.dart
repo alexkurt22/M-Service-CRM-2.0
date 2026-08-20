@@ -795,9 +795,8 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                                       icon: const Icon(Icons.chat, color: Colors.blue),
                                       onPressed: () {
                                         Navigator.push(context, MaterialPageRoute(builder: (_) => PrivateChatScreen(
-                                          chatId: widget.orderData['phone'],
-                                          clientName: widget.orderData['client_name'],
-                                          clientPhone: widget.orderData['phone'],
+                                          roomId: widget.orderData['phone'] ?? 'unknown',
+                                          targetName: widget.orderData['client_name'] ?? 'Клиент',
                                         )));
                                       },
                                     ),
@@ -984,3 +983,4 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     );
   }
 }
+
