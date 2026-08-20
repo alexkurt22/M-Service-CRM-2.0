@@ -8,7 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:mservice_crm/services/fcm_service.dart';
 import 'client_profile_screen.dart';
-import 'private_chat_screen.dart'; // Для перехода в чат с клиентом
+import 'private_chat_screen.dart';
 
 class OrderDetailsScreen extends StatefulWidget {
   final String orderId;
@@ -38,6 +38,18 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
   bool _isLoading = false;
   String? _myPhone;
 
+  // Контроллеры и состояния для встроенных чекбоксов закрытия
+  bool _isTimely = false;
+  bool _isDelayed = false;
+  bool _isCanceled = false;
+
+  final TextEditingController _jobDetailsCtrl = TextEditingController();
+  final TextEditingController _priceCtrl = TextEditingController();
+  final TextEditingController _paidCtrl = TextEditingController();
+  final TextEditingController _delayReasonCtrl = TextEditingController();
+  final TextEditingController _cancelReasonCtrl = TextEditingController();
+  final TextEditingController _cancelSumCtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -61,6 +73,12 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
       opt['price']?.dispose();
     }
     _internalNotesCtrl.dispose();
+    _jobDetailsCtrl.dispose();
+    _priceCtrl.dispose();
+    _paidCtrl.dispose();
+    _delayReasonCtrl.dispose();
+    _cancelReasonCtrl.dispose();
+    _cancelSumCtrl.dispose();
     super.dispose();
   }
 
@@ -262,13 +280,12 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
         'last_sender': myPhone,
       }, SetOptions(merge: true));
 
-      // Уведомление в чат БЕЗ кликабельности (как просил)
       await chatRef.collection('messages').add({
         'text': 'Поступил новый заказ на ремонт:\n\n$orderText',
         'sender_phone': myPhone, 
         'created_at': FieldValue.serverTimestamp(),
         'is_read': false, 
-        'is_order_invite': false, // Убрали кликабельность кнопки в чате
+        'is_order_invite': false, 
       });
 
       if (mounted) {
@@ -310,133 +327,6 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     }
   }
 
-  // --- УМНЫЕ ЧЕКБОКСЫ ЗАКРЫТИЯ ЗАКАЗА ---
-  Future<void> _showCompletionDialog() async {
-    bool isTimely = false;
-    bool isDelayed = false;
-    bool isCanceled = false;
-
-    final jobDetailsCtrl = TextEditingController();
-    final priceCtrl = TextEditingController();
-    final paidCtrl = TextEditingController();
-    final delayReasonCtrl = TextEditingController();
-    final cancelReasonCtrl = TextEditingController();
-    final cancelSumCtrl = TextEditingController();
-
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setStateDialog) {
-          return AlertDialog(
-            title: const Text('Завершение заказа', style: TextStyle(fontWeight: FontWeight.bold)),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CheckboxListTile(
-                    title: const Text("Своевременное выполнение", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
-                    value: isTimely,
-                    activeColor: Colors.green,
-                    onChanged: isCanceled ? null : (val) => setStateDialog(() => isTimely = val!),
-                  ),
-                  if (isTimely) Padding(
-                    padding: const EdgeInsets.only(left: 16, bottom: 8),
-                    child: Column(
-                      children: [
-                        TextField(controller: jobDetailsCtrl, decoration: const InputDecoration(labelText: 'Выполненные работы (детали)', border: OutlineInputBorder()), maxLines: 2),
-                        const SizedBox(height: 8),
-                        TextField(controller: priceCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Итоговая цена', prefixIcon: Icon(Icons.money), border: OutlineInputBorder())),
-                        const SizedBox(height: 8),
-                        TextField(controller: paidCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Оплачено по факту', prefixIcon: Icon(Icons.account_balance_wallet), border: OutlineInputBorder(), helperText: 'Разница уйдет в долг клиента')),
-                      ],
-                    ),
-                  ),
-
-                  CheckboxListTile(
-                    title: const Text("Отложенное выполнение / Перенос", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
-                    value: isDelayed,
-                    activeColor: Colors.orange,
-                    onChanged: isCanceled ? null : (val) => setStateDialog(() => isDelayed = val!),
-                  ),
-                  if (isDelayed) Padding(
-                    padding: const EdgeInsets.only(left: 16, bottom: 8),
-                    child: TextField(controller: delayReasonCtrl, decoration: const InputDecoration(labelText: 'Причина переноса / Забрать в СЦ', helperText: 'Будет создана новая заявка', border: OutlineInputBorder()), maxLines: 2),
-                  ),
-
-                  const Divider(),
-
-                  CheckboxListTile(
-                    title: const Text("Отмена заказа", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
-                    value: isCanceled,
-                    activeColor: Colors.red,
-                    onChanged: (val) {
-                      setStateDialog(() {
-                        isCanceled = val!;
-                        if (isCanceled) {
-                          isTimely = false;
-                          isDelayed = false;
-                        }
-                      });
-                    },
-                  ),
-                  if (isCanceled) Padding(
-                    padding: const EdgeInsets.only(left: 16, bottom: 8),
-                    child: Column(
-                      children: [
-                        TextField(controller: cancelReasonCtrl, decoration: const InputDecoration(labelText: 'Причина отмены', border: OutlineInputBorder()), maxLines: 2),
-                        const SizedBox(height: 8),
-                        TextField(controller: cancelSumCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Сумма за вызов (Необязательно)', border: OutlineInputBorder())),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Назад', style: TextStyle(color: Colors.grey))),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[900], foregroundColor: Colors.white),
-                onPressed: () async {
-                  if (!isTimely && !isDelayed && !isCanceled) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Выберите хотя бы один чекбокс'), backgroundColor: Colors.red));
-                    return;
-                  }
-                  if (isCanceled && cancelReasonCtrl.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Укажите причину отмены'), backgroundColor: Colors.red));
-                    return;
-                  }
-                  if (isTimely && (jobDetailsCtrl.text.trim().isEmpty || priceCtrl.text.trim().isEmpty)) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Укажите детали работы и цену'), backgroundColor: Colors.red));
-                    return;
-                  }
-                  if (isDelayed && delayReasonCtrl.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Укажите причину отложенного выполнения'), backgroundColor: Colors.red));
-                    return;
-                  }
-
-                  Navigator.pop(ctx);
-                  await _processAdvancedCompletion(
-                    isTimely: isTimely,
-                    isDelayed: isDelayed,
-                    isCanceled: isCanceled,
-                    jobDetails: jobDetailsCtrl.text.trim(),
-                    priceStr: priceCtrl.text.trim(),
-                    paidStr: paidCtrl.text.trim(),
-                    delayReason: delayReasonCtrl.text.trim(),
-                    cancelReason: cancelReasonCtrl.text.trim(),
-                    cancelSum: cancelSumCtrl.text.trim(),
-                  );
-                },
-                child: const Text('ПРИМЕНИТЬ'),
-              ),
-            ],
-          );
-        }
-      ),
-    );
-  }
-
   Future<void> _processAdvancedCompletion({
     required bool isTimely,
     required bool isDelayed,
@@ -472,7 +362,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
           double price = double.tryParse(priceStr ?? '') ?? 0;
           double paid = paidStr == null || paidStr.isEmpty ? price : (double.tryParse(paidStr) ?? price);
           double debt = price - paid;
-          if (debt < 0) debt = 0; // Переплаты не уводим в минус по долгу
+          if (debt < 0) debt = 0; 
           
           updates['job_details'] = jobDetails;
           updates['price'] = priceStr;
@@ -484,7 +374,6 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
           updates['delay_reason'] = delayReason;
           if (!isTimely) updates['is_just_delayed'] = true;
 
-          // Генерируем новую заявку
           final newOrderRef = FirebaseFirestore.instance.collection('orders').doc();
           Map<String, dynamic> newOrderData = Map<String, dynamic>.from(widget.orderData);
           newOrderData.remove('status');
@@ -510,8 +399,15 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Действие успешно выполнено!'), backgroundColor: Colors.green));
-        Navigator.pop(context); 
-        if (!isCanceled) _askForFollowUp(); 
+        
+        // Показываем напоминание ДО закрытия страницы
+        if (!isCanceled) {
+          await _askForFollowUp(); 
+        }
+
+        if (mounted) {
+          Navigator.pop(context); 
+        }
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red));
@@ -521,7 +417,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
   }
 
   // --- КАЛЕНДАРЬ НАПОМИНАНИЙ ---
-  void _askForFollowUp() async {
+  Future<void> _askForFollowUp() async {
     bool wantsReminder = await showDialog(
       context: context,
       barrierDismissible: false,
@@ -556,7 +452,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     }
   }
 
-  // --- ВЫЕЗЖАЮЩЕЕ ОКНО ТОРГА ---
+  // --- ВЫЕЗЖАЮЩЕЕ ОКНО ТОРГА (ЗАЩИЩЕННОЕ ОТ СИСТЕМНЫХ КНОПОК И КЛАВИАТУРЫ) ---
   void _showTorgBottomSheet() {
     setState(() {
       _options.clear();
@@ -566,95 +462,102 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setSheetState) {
-          return Padding(
-            padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 16, right: 16, top: 16),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('Предложить варианты ремонта', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  ...List.generate(_options.length, (index) {
-                    return Card(
-                      color: Colors.blueGrey.withOpacity(0.1),
-                      margin: const EdgeInsets.only(bottom: 12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('Вариант ${index + 1}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                if (_options.length > 1)
-                                  IconButton(
-                                    icon: const Icon(Icons.delete, color: Colors.red),
-                                    onPressed: () => setSheetState(() {
-                                      _options[index]['description']?.dispose();
-                                      _options[index]['price']?.dispose();
-                                      _options.removeAt(index);
-                                    }),
-                                  )
-                              ],
-                            ),
-                            TextField(controller: _options[index]['description'], decoration: const InputDecoration(labelText: 'Что делаем', border: OutlineInputBorder()), maxLines: 2),
-                            const SizedBox(height: 8),
-                            TextField(controller: _options[index]['price'], keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Цена (TMT)', border: OutlineInputBorder())),
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
-                  TextButton.icon(
-                    onPressed: () => setSheetState(() => _options.add({'description': TextEditingController(), 'price': TextEditingController()})),
-                    icon: const Icon(Icons.add), label: const Text('Добавить еще вариант'),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), backgroundColor: Colors.orange, foregroundColor: Colors.white),
-                    onPressed: () async {
-                      List<Map<String, dynamic>> optionsData = [];
-                      for (var opt in _options) {
-                        String desc = opt['description']!.text.trim();
-                        String price = opt['price']!.text.trim();
-                        if (desc.isNotEmpty && price.isNotEmpty) {
-                          optionsData.add({'description': desc, 'price': price});
-                        }
-                      }
-                      if (optionsData.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Заполните варианты'), backgroundColor: Colors.red));
-                        return;
-                      }
-                      
-                      Navigator.pop(ctx);
-                      setState(() => _isLoading = true);
-                      try {
-                        await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).update({
-                          'status': 'awaiting_approval',
-                          'options': optionsData,
-                          'selected_option_index': FieldValue.delete(),
-                          'has_unread_update': true,
-                        });
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Варианты отправлены клиенту!'), backgroundColor: Colors.green));
-                        Navigator.pop(context);
-                      } catch(e) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red));
-                      } finally {
-                        setState(() => _isLoading = false);
-                      }
-                    },
-                    child: const Text('ОТПРАВИТЬ КЛИЕНТУ'),
-                  ),
-                  const SizedBox(height: 24),
-                ],
+      backgroundColor: Colors.transparent, 
+      builder: (ctx) => SafeArea(
+        child: StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20))
               ),
-            ),
-          );
-        }
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom + 16.0, 
+                left: 16, right: 16, top: 16
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('Предложить варианты ремонта', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 16),
+                    ...List.generate(_options.length, (index) {
+                      return Card(
+                        color: Colors.blueGrey.withOpacity(0.1),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('Вариант ${index + 1}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  if (_options.length > 1)
+                                    IconButton(
+                                      icon: const Icon(Icons.delete, color: Colors.red),
+                                      onPressed: () => setSheetState(() {
+                                        _options[index]['description']?.dispose();
+                                        _options[index]['price']?.dispose();
+                                        _options.removeAt(index);
+                                      }),
+                                    )
+                                ],
+                              ),
+                              TextField(controller: _options[index]['description'], decoration: const InputDecoration(labelText: 'Что делаем', border: OutlineInputBorder()), maxLines: 2),
+                              const SizedBox(height: 8),
+                              TextField(controller: _options[index]['price'], keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Цена (TMT)', border: OutlineInputBorder())),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                    TextButton.icon(
+                      onPressed: () => setSheetState(() => _options.add({'description': TextEditingController(), 'price': TextEditingController()})),
+                      icon: const Icon(Icons.add), label: const Text('Добавить еще вариант'),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), backgroundColor: Colors.orange, foregroundColor: Colors.white),
+                      onPressed: () async {
+                        List<Map<String, dynamic>> optionsData = [];
+                        for (var opt in _options) {
+                          String desc = opt['description']!.text.trim();
+                          String price = opt['price']!.text.trim();
+                          if (desc.isNotEmpty && price.isNotEmpty) {
+                            optionsData.add({'description': desc, 'price': price});
+                          }
+                        }
+                        if (optionsData.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Заполните варианты'), backgroundColor: Colors.red));
+                          return;
+                        }
+                        
+                        Navigator.pop(ctx);
+                        setState(() => _isLoading = true);
+                        try {
+                          await FirebaseFirestore.instance.collection('orders').doc(widget.orderId).update({
+                            'status': 'awaiting_approval',
+                            'options': optionsData,
+                            'selected_option_index': FieldValue.delete(),
+                            'has_unread_update': true,
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Варианты отправлены клиенту!'), backgroundColor: Colors.green));
+                        } catch(e) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red));
+                        } finally {
+                          setState(() => _isLoading = false);
+                        }
+                      },
+                      child: const Text('ОТПРАВИТЬ КЛИЕНТУ'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+        ),
       ),
     );
   }
@@ -730,27 +633,17 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
         backgroundColor: isDark ? Colors.grey[900] : Colors.blueGrey[900],
         foregroundColor: Colors.white,
         title: const Text('Детали заказа', style: TextStyle(fontSize: 18)),
-        actions: isLockedForMe ? [] : [
-          // ЧЕКБОКСЫ ЗАКРЫТИЯ ТОЛЬКО В СТАТУСЕ В РАБОТЕ
-          if (status == 'in_progress' && widget.orderData['assigned_to'] != null)
-            TextButton.icon(
-              style: TextButton.styleFrom(foregroundColor: Colors.white),
-              onPressed: _showCompletionDialog,
-              icon: const Icon(Icons.task_alt, color: Colors.greenAccent),
-              label: const Text('Закрыть', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-        ],
+        // Кнопку "Закрыть" из хедера убрали полностью
       ),
       body: _myPhone == null || _isLoading
           ? const Center(child: CircularProgressIndicator())
           : isLockedForMe
               ? _buildLockScreen(isDark)
               : SingleChildScrollView(
-                  padding: EdgeInsets.only(left: 16.0, right: 16.0, top: 16.0, bottom: MediaQuery.of(context).padding.bottom + 40.0),
+                  padding: EdgeInsets.only(left: 16.0, right: 16.0, top: 16.0, bottom: MediaQuery.of(context).padding.bottom + 80.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // КАРТОЧКА КЛИЕНТА
                       Card(
                         elevation: 2, 
                         color: Theme.of(context).cardColor,
@@ -760,7 +653,6 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Кликабельна только верхняя строка
                               InkWell(
                                 onTap: widget.fromProfile ? null : _openClientProfile,
                                 child: Row(
@@ -779,7 +671,6 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                               ),
                               Divider(height: 24, color: isDark ? Colors.grey[800] : Colors.grey[200]),
                               
-                              // Номер телефона + Быстрые действия
                               Row(
                                 children: [
                                   const Icon(Icons.phone, size: 18, color: Colors.grey),
@@ -813,7 +704,6 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                               ),
                               const SizedBox(height: 16),
                               
-                              // Детали поломки с кнопкой редактирования
                               Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(color: isDark ? Colors.orange[900]?.withOpacity(0.2) : Colors.orange[50], borderRadius: BorderRadius.circular(8)),
@@ -860,22 +750,22 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 16),
-
-                      // Кнопка назначения мастера
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          side: BorderSide(color: isDark ? Colors.blueGrey[600]! : Colors.blueGrey[300]!),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      
+                      if (widget.orderData['assigned_to'] == null) ...[
+                        const SizedBox(height: 16),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            side: BorderSide(color: isDark ? Colors.blueGrey[600]! : Colors.blueGrey[300]!),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: _showAssignMasterSheet,
+                          icon: Icon(Icons.person_add_alt_1, color: isDark ? Colors.blueGrey[300] : Colors.blueGrey[700]),
+                          label: Text('НАЗНАЧИТЬ МАСТЕРА', style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.blueGrey[300] : Colors.blueGrey[800])),
                         ),
-                        onPressed: _showAssignMasterSheet,
-                        icon: Icon(Icons.person_add_alt_1, color: isDark ? Colors.blueGrey[300] : Colors.blueGrey[700]),
-                        label: Text('НАЗНАЧИТЬ МАСТЕРА', style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.blueGrey[300] : Colors.blueGrey[800])),
-                      ),
-                      const SizedBox(height: 24),
+                        const SizedBox(height: 24),
+                      ],
 
-                      // Блоки статусов
                       if (status == 'new') ...[
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), backgroundColor: Colors.orange[600], foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
@@ -976,7 +866,136 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
                           label: const Text('Сохранить пометку'),
                           style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, foregroundColor: Colors.white),
                         ),
-                      )
+                      ),
+
+                      // ВСТРОЕННЫЕ ЧЕКБОКСЫ ЗАКРЫТИЯ ЗАКАЗА
+                      if (status == 'in_progress' && widget.orderData['assigned_to'] != null) ...[
+                        const SizedBox(height: 40),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.grey[900] : Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: isDark ? Colors.grey[700]! : Colors.blueGrey[200]!, width: 2)
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.task_alt, color: isDark ? Colors.white70 : Colors.blueGrey),
+                                  const SizedBox(width: 8),
+                                  Text('ЗАКРЫТИЕ ЗАКАЗА', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: isDark ? Colors.white : Colors.blueGrey[900])),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              CheckboxListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text("Своевременное выполнение", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                                value: _isTimely,
+                                activeColor: Colors.green,
+                                onChanged: _isCanceled ? null : (val) => setState(() => _isTimely = val!),
+                              ),
+                              if (_isTimely) Padding(
+                                padding: const EdgeInsets.only(left: 0, bottom: 16, top: 8),
+                                child: Column(
+                                  children: [
+                                    TextField(controller: _jobDetailsCtrl, style: TextStyle(color: isDark ? Colors.white : Colors.black87), decoration: InputDecoration(labelText: 'Выполненные работы (детали)', labelStyle: TextStyle(color: isDark ? Colors.white54 : Colors.grey[700]), border: const OutlineInputBorder()), maxLines: 2),
+                                    const SizedBox(height: 8),
+                                    TextField(controller: _priceCtrl, style: TextStyle(color: isDark ? Colors.white : Colors.black87), keyboardType: TextInputType.number, decoration: InputDecoration(labelText: 'Итоговая цена (TMT)', labelStyle: TextStyle(color: isDark ? Colors.white54 : Colors.grey[700]), prefixIcon: const Icon(Icons.money, color: Colors.green), border: const OutlineInputBorder())),
+                                    const SizedBox(height: 8),
+                                    TextField(controller: _paidCtrl, style: TextStyle(color: isDark ? Colors.white : Colors.black87), keyboardType: TextInputType.number, decoration: InputDecoration(labelText: 'Оплачено по факту (TMT)', labelStyle: TextStyle(color: isDark ? Colors.white54 : Colors.grey[700]), prefixIcon: const Icon(Icons.account_balance_wallet, color: Colors.blue), border: const OutlineInputBorder(), helperText: 'Разница уйдет в долг клиента', helperStyle: TextStyle(color: isDark ? Colors.white38 : Colors.grey))),
+                                  ],
+                                ),
+                              ),
+
+                              CheckboxListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text("Отложенное выполнение / Перенос", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                                value: _isDelayed,
+                                activeColor: Colors.orange,
+                                onChanged: _isCanceled ? null : (val) => setState(() => _isDelayed = val!),
+                              ),
+                              if (_isDelayed) Padding(
+                                padding: const EdgeInsets.only(left: 0, bottom: 16, top: 8),
+                                child: TextField(controller: _delayReasonCtrl, style: TextStyle(color: isDark ? Colors.white : Colors.black87), decoration: InputDecoration(labelText: 'Причина переноса / Забрать в СЦ', labelStyle: TextStyle(color: isDark ? Colors.white54 : Colors.grey[700]), helperText: 'Будет создана новая заявка', helperStyle: TextStyle(color: isDark ? Colors.white38 : Colors.grey), border: const OutlineInputBorder()), maxLines: 2),
+                              ),
+
+                              const Divider(height: 32),
+
+                              CheckboxListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text("Отмена заказа", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+                                value: _isCanceled,
+                                activeColor: Colors.red,
+                                onChanged: (val) {
+                                  setState(() {
+                                    _isCanceled = val!;
+                                    if (_isCanceled) {
+                                      _isTimely = false;
+                                      _isDelayed = false;
+                                    }
+                                  });
+                                },
+                              ),
+                              if (_isCanceled) Padding(
+                                padding: const EdgeInsets.only(left: 0, bottom: 16, top: 8),
+                                child: Column(
+                                  children: [
+                                    TextField(controller: _cancelReasonCtrl, style: TextStyle(color: isDark ? Colors.white : Colors.black87), decoration: InputDecoration(labelText: 'Причина отмены', labelStyle: TextStyle(color: isDark ? Colors.white54 : Colors.grey[700]), border: const OutlineInputBorder()), maxLines: 2),
+                                    const SizedBox(height: 8),
+                                    TextField(controller: _cancelSumCtrl, style: TextStyle(color: isDark ? Colors.white : Colors.black87), keyboardType: TextInputType.number, decoration: InputDecoration(labelText: 'Сумма за вызов (Необязательно)', labelStyle: TextStyle(color: isDark ? Colors.white54 : Colors.grey[700]), border: const OutlineInputBorder())),
+                                  ],
+                                ),
+                              ),
+
+                              if (_isTimely || _isDelayed || _isCanceled) ...[
+                                const SizedBox(height: 24),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(vertical: 16),
+                                      backgroundColor: _isCanceled ? Colors.red[600] : Colors.green[600],
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                    onPressed: () async {
+                                      if (_isCanceled && _cancelReasonCtrl.text.trim().isEmpty) {
+                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Укажите причину отмены'), backgroundColor: Colors.red));
+                                        return;
+                                      }
+                                      if (_isTimely && (_jobDetailsCtrl.text.trim().isEmpty || _priceCtrl.text.trim().isEmpty)) {
+                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Укажите детали работы и цену'), backgroundColor: Colors.red));
+                                        return;
+                                      }
+                                      if (_isDelayed && _delayReasonCtrl.text.trim().isEmpty) {
+                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Укажите причину отложенного выполнения'), backgroundColor: Colors.red));
+                                        return;
+                                      }
+
+                                      await _processAdvancedCompletion(
+                                        isTimely: _isTimely,
+                                        isDelayed: _isDelayed,
+                                        isCanceled: _isCanceled,
+                                        jobDetails: _jobDetailsCtrl.text.trim(),
+                                        priceStr: _priceCtrl.text.trim(),
+                                        paidStr: _paidCtrl.text.trim(),
+                                        delayReason: _delayReasonCtrl.text.trim(),
+                                        cancelReason: _cancelReasonCtrl.text.trim(),
+                                        cancelSum: _cancelSumCtrl.text.trim(),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.check_circle_outline),
+                                    label: Text(_isCanceled ? 'ПОДТВЕРДИТЬ ОТМЕНУ' : 'ПРИМЕНИТЬ И ЗАКРЫТЬ', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                  ),
+                                )
+                              ]
+                            ],
+                          ),
+                        ),
+                      ]
                     ],
                   ),
                 ),
