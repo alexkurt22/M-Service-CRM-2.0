@@ -46,10 +46,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
        }
     }
     
-    setState(() {
-      _myPhone = phone;
-      _isLoadingUser = false;
-    });
+    if (mounted) {
+      setState(() {
+        _myPhone = phone;
+        _isLoadingUser = false;
+      });
+    }
   }
 
   bool _hasPermission(String permission) {
@@ -63,7 +65,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
     super.dispose();
   }
 
-  // Функция для красивого вывода времени создания заказа
   String _formatTime(Timestamp? timestamp) {
     if (timestamp == null) return 'Время неизвестно';
     final date = timestamp.toDate();
@@ -82,7 +83,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // --- 1. ЛОГИКА ГИБКОГО ЗАПРОСА ДЛЯ СБОРНЫХ ЭКРАНОВ ---
     Query query = FirebaseFirestore.instance.collection('orders');
 
     if (statusKey == 'incoming') {
@@ -108,7 +108,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
         var docs = snapshot.data!.docs.toList();
 
-        // --- ЛОГИКА ОГРАНИЧЕНИЯ ДОСТУПА ПО РОЛЯМ ---
+        // Фильтр по правам доступа
         if (!_hasPermission('view_all_orders')) {
           docs = docs.where((doc) {
             final data = doc.data() as Map<String, dynamic>;
@@ -120,7 +120,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
            return _buildEmptyState(isDark);
         }
 
-        // --- ЛОГИКА УМНОГО ПОИСКА ЗАКАЗОВ ---
+        // Умный поиск
         if (_searchQuery.isNotEmpty) {
           final queryText = _searchQuery.toLowerCase();
           docs = docs.where((doc) {
@@ -147,7 +147,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           );
         }
 
-        // Сортировка: Сначала с непрочитанными обновлениями, затем по дате
+        // Сортировка
         docs.sort((a, b) {
           final aData = a.data() as Map<String, dynamic>;
           final bData = b.data() as Map<String, dynamic>;
@@ -176,21 +176,37 @@ class _OrdersScreenState extends State<OrdersScreen> {
           itemBuilder: (context, index) {
             final doc = docs[index];
             final data = doc.data() as Map<String, dynamic>;
+            
             final clientName = data['client_name'] ?? 'Неизвестный клиент';
             final deviceType = data['device_type'] ?? 'Устройство';
             final currentStatus = data['status'] ?? 'new';
             final hasUnreadUpdate = data['has_unread_update'] == true; 
-            
             final createdAt = data['created_at'] as Timestamp?;
             
-            Color iconColor = Colors.blue; // По умолчанию для новых
+            // Флаги типа заказа
+            bool isDelayedCopy = data['is_delayed_copy'] == true;
+            bool isFromStore = data['is_from_store'] == true;
+            
+            Color iconColor = Colors.blue; 
             IconData statusIcon = Icons.new_releases;
             
-            if (currentStatus == 'awaiting_approval') {
+            // --- ЛОГИКА УМНЫХ БЕЙДЖИКОВ ---
+            if (currentStatus == 'new') {
+              if (isFromStore) {
+                iconColor = Colors.brown[400]!;
+                statusIcon = Icons.local_mall; // Пакет для магазина
+              } else if (isDelayedCopy) {
+                iconColor = Colors.orange;
+                statusIcon = Icons.keyboard_return; // Оранжевая стрелка назад (Перенос)
+              } else {
+                iconColor = Colors.green;
+                statusIcon = Icons.arrow_circle_right; // Зеленая стрелка вправо (Новый)
+              }
+            } else if (currentStatus == 'awaiting_approval') {
               iconColor = Colors.deepPurple;
-              statusIcon = Icons.hourglass_empty;
+              statusIcon = Icons.timer; // Секундомер
             } else if (currentStatus == 'in_progress') {
-              iconColor = Colors.orange;
+              iconColor = Colors.blue;
               statusIcon = Icons.build_circle;
             } else if (currentStatus == 'completed') {
               iconColor = Colors.teal;
@@ -224,18 +240,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 borderRadius: BorderRadius.circular(12),
                 onTap: () async {
                   if (hasUnreadUpdate) {
-                    await FirebaseFirestore.instance.collection('orders').doc(doc.id).update({
-                      'has_unread_update': false,
-                    });
+                    await FirebaseFirestore.instance.collection('orders').doc(doc.id).update({'has_unread_update': false});
                   }
-
                   if (context.mounted) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => OrderDetailsScreen(orderId: doc.id, orderData: data),
-                      ),
-                    );
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => OrderDetailsScreen(orderId: doc.id, orderData: data)));
                   }
                 },
                 child: Padding(
@@ -265,7 +273,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               ],
                             ),
                             const SizedBox(height: 4),
-                            // ВЫВОД УСТРОЙСТВА И ВРЕМЕНИ СОЗДАНИЯ ЗАКАЗА
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -274,22 +281,29 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               ],
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              data['problem'] ?? 'Проблема не указана',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: isDark ? Colors.grey[500] : Colors.blueGrey[400], fontSize: 13),
-                            ),
                             
-                            // БЫСТРЫЙ ВЫВОД ИНФОРМАЦИИ В АРХИВЕ
+                            // Вывод проблемы или причины переноса
+                            if (isDelayedCopy)
+                              Text(
+                                'Перенос: ${data['problem'] ?? 'Не указано'}',
+                                maxLines: 1, overflow: TextOverflow.ellipsis,
+                                style: TextStyle(color: isDark ? Colors.orange[300] : Colors.orange[800], fontSize: 13, fontWeight: FontWeight.bold),
+                              )
+                            else
+                              Text(
+                                data['problem'] ?? 'Проблема не указана',
+                                maxLines: 1, overflow: TextOverflow.ellipsis,
+                                style: TextStyle(color: isDark ? Colors.grey[500] : Colors.blueGrey[400], fontSize: 13),
+                              ),
+                            
                             if (currentStatus == 'completed' && data['price'] != null)
                               Padding(
-                                padding: const EdgeInsets.only(top: 6.0), // <-- ИСПРАВЛЕНО
-                                child: Text('Сумма: ${data['price']}', style: TextStyle(color: isDark ? Colors.tealAccent : Colors.teal, fontWeight: FontWeight.bold, fontSize: 13)),
+                                padding: const EdgeInsets.only(top: 6.0),
+                                child: Text('Сумма: ${data['price']} TMT', style: TextStyle(color: isDark ? Colors.tealAccent : Colors.teal, fontWeight: FontWeight.bold, fontSize: 13)),
                               ),
                             if (currentStatus == 'canceled' && data['cancel_reason'] != null)
                               Padding(
-                                padding: const EdgeInsets.only(top: 6.0), // <-- ИСПРАВЛЕНО
+                                padding: const EdgeInsets.only(top: 6.0),
                                 child: Text('Причина: ${data['cancel_reason']}', style: TextStyle(color: isDark ? Colors.red[300] : Colors.red[600], fontWeight: FontWeight.w600, fontSize: 12)),
                               ),
                           ],
@@ -332,11 +346,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
         foregroundColor: Colors.white,
         title: Text(widget.title), 
       ),
-      // КНОПКА ДОБАВЛЕНИЯ ЗАКАЗА ТЕПЕРЬ ТОЛЬКО ВО ВКЛАДКЕ INCOMING (ПОСТУПИВШИЕ)
+      // Кнопка появляется ТОЛЬКО во вкладке Поступившие (incoming)
       floatingActionButton: widget.status == 'incoming' && _hasPermission('view_all_orders') 
           ? Padding(
               padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 8.0),
-              child: FloatingActionButton(
+              child: FloatingActionButton.extended(
                 onPressed: () {
                   Navigator.push(
                     context,
@@ -344,8 +358,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   );
                 },
                 backgroundColor: Colors.orange[600],
-                tooltip: 'Ручной ввод заказа',
-                child: const Icon(Icons.add, color: Colors.white, size: 28),
+                icon: const Icon(Icons.add, color: Colors.white),
+                label: const Text('ОФФЛАЙН ЗАКАЗ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             )
           : null,
